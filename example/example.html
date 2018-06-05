@@ -26,7 +26,7 @@
     <canvas id="c5" width="64" height="64"></canvas>
     <canvas id="c6" width="64" height="64"></canvas>
     <canvas id="c7" width="64" height="64"></canvas>
-    <canvas id="c8" width="64" height="64"></canvas>
+    <canvas id="c8" width="400" height="300"></canvas>
     <canvas id="c9" width="400" height="300"></canvas>
     <div id="map"></div>
   </body>
@@ -312,14 +312,14 @@ main2();
     const gl = document.querySelector('#c8').getContext('webgl', {preserveDrawingBuffer: true});
     gl.enable(gl.SCISSOR_TEST);
     setInterval(() => {
-      gl.scissor(Math.random() * 54, Math.random() * 54, 10, 10);
+      gl.scissor(Math.random() * (gl.canvas.width - 10), Math.random() * (gl.canvas.height - 10), 10, 10);
       gl.clearColor(Math.random(), Math.random(), Math.random(), 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
     }, 500);
   }
 
   </script>
-  <gscript>
+  <script type="ignore">
 mapboxgl.accessToken = 'undefined';
 var map = new mapboxgl.Map({
     container: 'map', // container id
@@ -327,7 +327,7 @@ var map = new mapboxgl.Map({
     center: [-74.50, 40], // starting position [lng, lat]
     zoom: 9 // starting zoom
 });
-  </gscript>
+  </script>
 
   <script src="js/three.js"></script>
   <script id="fragment_shader4" type="x-shader/x-fragment">
