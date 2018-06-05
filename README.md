@@ -2,7 +2,8 @@
 
 Virtualizes a single WebGL context into multiple contexts
 
-[Demo of 4 WebGL apps running with only 1 WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
+[Demo of some WebGL apps running with only 1 WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
+and using `alpha: false`, `premultipledAlpha: false`, `preserveDrawingBuffer: true` and some other things.
 
 ## What?
 
@@ -27,6 +28,24 @@ Include it on your page before other scripts
 ## Limits and Issues
 
 At the moment I just wanted to see it work so I only supported WebGL1 and I didn't support
-any extensions that have methods.
+any extensions that have methods. In particular there's no support for `WebGL_draw_buffers`,
+`OES_vertex_array_object` nor `ANGLE_instanced_arrays`.
 
+## Perf
+
+Saving and restoring all the state is probably pretty dang slow but generally it should
+only happen once per canvas per render so that might not be too bad. There are certain
+low-hanging optimizations for example you could track the highest used attribute and
+highest used texture unit across contexts and only save and restore up to that highest
+attribute and texture unit since most apps don't use all of them.
+
+The other big perf issue is you can't render directly to different canvases so I have
+to make each of the canvases use a `Canvas2DRendernigContext` and call `drawImage`.
+
+That could be solved maybe with `OffscreenCanvas` and `ImageBitmapRenderingContext`
+but those features haven't shipped without a flag as of 2018-06-05.
+
+## License
+
+MIT (see top of js file)
 
