@@ -17,6 +17,20 @@ I mostly wrote this for a fun short techincal challenge. I have no plans to acut
 or maintain it. If you find a problem feel free to file an issue but I can't promise I
 can spend anytime addressing it. Pull requests are more welcome or just fork it.
 
+One other thing you could do with this is share resources across contexts.
+Since underneath there is really only one context from the POV of the app
+you can do things like
+
+    const gl1 = document.createElement("canvas").getContext("webgl");
+    const gl2 = document.createElement("canvas").getContext("webgl");
+
+    const tex1 = gl1.createTexture();
+
+    gl2.bindTexture(gl1.TEXTURE_2D, tex1);  // this would normally fail
+
+With normal WebGL contexts you can't use resources from one context in another
+context but with virtual contexts you can.
+
 ## How to use?
 
 Include it on your page before other scripts
