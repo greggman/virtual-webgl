@@ -17,7 +17,10 @@ I mostly wrote this for a fun short techincal challenge. I have no plans to acut
 or maintain it. If you find a problem feel free to file an issue but I can't promise I
 can spend anytime addressing it. Pull requests are more welcome or just fork it.
 
-One other thing you could do with this is share resources across contexts.
+Some things you could do with this other can just get more contexts:
+
+### Share resources across contexts.
+
 Since underneath there is really only one context from the POV of the app
 you can do things like
 
@@ -30,6 +33,21 @@ you can do things like
 
 With normal WebGL contexts you can't use resources from one context in another
 context but with virtual contexts you can.
+
+### Use the output of one WebGL app inside another
+
+For example use a [mapbox-gl-js](https://www.mapbox.com/mapbox-gl-js/api/) map
+inside a three.js app.
+
+I suppose you can already do this by just copying the canvas of the first
+app into the second but that copy is probably slow where as just rendering
+to a texture is fast.
+
+To do this you'd probably want to modify this code so that it uses the normal
+virtual context framebuffer for mapbox-gl-js but doesn't try to composite it.
+Then for the three.js virutal context it just draws directly to the canvas.
+You'd need to expose the mapbox-gl-js's virtual context's texture object
+and pass that into three.js
 
 ## How to use?
 
@@ -48,8 +66,9 @@ any extensions that have methods. In particular there's no support for `WebGL_dr
 ## Perf
 
 Saving and restoring all the state is probably pretty dang slow but generally it should
-only happen once per canvas per render so that might not be too bad. There are certain
-low-hanging optimizations for example you could track the highest used attribute and
+only happen once per canvas per render so that might not be too bad.
+
+There are certain low-hanging optimizations. For example you could track the highest used attribute and
 highest used texture unit across contexts and only save and restore up to that highest
 attribute and texture unit since most apps don't use all of them.
 
