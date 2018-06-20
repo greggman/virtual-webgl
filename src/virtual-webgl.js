@@ -32,30 +32,16 @@
  */
 (function() {
   const canvasToVirtualContextMap = new Map();
-  const allowedExtensions = {
-    OES_texture_float: true,
-    OES_texture_half_float: true,
-    WEBGL_lose_context: true,
-    OES_standard_derivatives: true,
-    // OES_vertex_array_object: true, need to save/restore vaos
-    WEBGL_debug_renderer_info: true,
-    WEBGL_debug_shaders: true,
-    WEBGL_compressed_texture_s3tc: true,
-    WEBGL_depth_texture: true,
-    OES_element_index_uint: true,
-    EXT_texture_filter_anisotropic: true,
-    EXT_frag_depth: true,
-    WEBGL_draw_buffers: true,
-    //ANGLE_instanced_arrays: true, need to wrap functions
-    OES_texture_float_linear: true,
-    OES_texture_half_float_linear: true,
-    EXT_blend_minmax: true,
-    EXT_shader_texture_lod: true,
-  };
   const extensionInfo = {
     WEBGL_draw_buffers: {
       wrapperFnMakerFn: makeWEBGL_draw_buffersWrapper,
       saveRestoreMakerFn: makeWEBGL_drawBuffersSaveRestoreHelper,
+    },
+    OES_vertex_array_object: {
+      wrapperFnMakerFn: makeOES_vertex_array_objectWrapper,
+    },
+    ANGLE_instanced_arrays: {
+      wrapperFnMakerFn: makeANGLE_instanced_arraysWrapper,
     },
   };
   const extensionSaveRestoreHelpersArray = [];
@@ -65,6 +51,8 @@
   let someContextsNeedRendering;
 
   const sharedWebGLContext = document.createElement('canvas').getContext('webgl');
+  const sharedVAOExtension = sharedWebGLContext.getExtension("OES_vertex_array_object");
+  const sharedInstanceExtension = sharedWebGLContext.getExtension("ANGLE_instanced_arrays");
   const numAttributes = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_VERTEX_ATTRIBS);
   const numTextureUnits = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
   let numDrawBuffers;
@@ -101,6 +89,12 @@
   const premultplyAlphaTrueProgram = createProgram(sharedWebGLContext, [vs, fs]);
   const premultplyAlphaFalseProgram = createProgram(sharedWebGLContext, [vs, fs2]);
 
+  if (sharedVAOExtension) {
+    const vao = sharedVAOExtension.createVertexArrayOES();
+    sharedVAOExtension.bindVertexArrayOES(vao);
+    baseState.vertexArray = vao;
+  }
+
   {
     const gl = sharedWebGLContext;
     const positionLoc = 0;  // hard coded in createProgram
@@ -120,9 +114,6 @@
     gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
   }
-  const supportedExtensions = sharedWebGLContext.getSupportedExtensions().filter((name) => {
-    return allowedExtensions[name];
-  });
 
   saveAllState(baseState);
 
@@ -139,9 +130,6 @@
 
   function valueOrDefault(value, defaultValue) {
     return value === undefined ? defaultValue : value;
-  }
-  function isSupportedExtension(name) {
-    return supportedExtensions.indexOf(name) >= 0;
   }
 
   class VirtualWebGLContext {
@@ -197,6 +185,11 @@
       // default blend, stencil, zbuffer, culling, viewport etc... state
       this._state = makeDefaultState(canvas.width, canvas.height);
       this._state.framebuffer = this._drawingbufferFramebuffer;
+
+      if (sharedVAOExtension) {
+        this._state.vertexArray = sharedVAOExtension.createVertexArrayOES();
+        this._defaultVertexArray = this._state.vertexArray;
+      }
     }
     get drawingBufferWidth() {
       return this.canvas.width;
@@ -210,7 +203,6 @@
     const gl = WebGLRenderingContext;
     const state ={
       arrayBuffer: null,
-      elementArrayBuffer: null,
       renderbuffer: null,
       framebuffer: null,
 
@@ -273,19 +265,28 @@
       stencilWriteMask: 0xFFFFFFFF,
 
       textureUnits: [],
-      attributes: [],
     };
 
-    for (let i = 0; i < numAttributes; ++i) {
-      state.attributes.push({
-        buffer: null,
-        enabled: false,
-        size: 4,
-        stride: 0,
-        type: gl.FLOAT,
-        normalized: false,
-        value: [0, 0, 0, 1],
-      });
+    if (sharedVAOExtension) {
+      state.vertexArray = null;
+    } else {
+      state.elementArrayBuffer = null;
+      state.attributes = [];
+      for (let i = 0; i < numAttributes; ++i) {
+        const attrib = {
+          buffer: null,
+          enabled: false,
+          size: 4,
+          stride: 0,
+          type: gl.FLOAT,
+          normalized: false,
+          value: [0, 0, 0, 1],
+        };
+        if (sharedInstanceExtension) {
+          attrib.divisor = 0;
+        }
+        state.attributes.push(attrib);
+      }
     }
 
     for (let i = 0; i < numTextureUnits; ++i) {
@@ -315,9 +316,6 @@
             break;
           case 'getExtension':
             newValue = createGetExtensionWrapper(value);
-            break;
-          case 'getSupportedExtensions':
-            newValue = virtualGetSupportedExtensions;
             break;
           case 'bindFramebuffer':
             newValue = virtualBindFramebuffer;
@@ -354,10 +352,6 @@
         return existingExt;
       }
 
-      if (!allowedExtensions[name] || supportedExtensions.indexOf(name) < 0) {
-        return null;
-      }
-
       const ext = origFn.call(sharedWebGLContext, name);
       const wrapperInfo = extensionInfo[name] || {};
       const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn;
@@ -388,6 +382,55 @@
 
   function isFramebufferBindingNull(vctx) {
     return vctx._state.framebuffer === vctx._drawingbufferFramebuffer;
+  }
+
+  function makeOES_vertex_array_objectWrapper(ext, origFn, name) {
+    switch (name) {
+      case 'bindVertexArrayOES':
+        return virutalbindVertexArrayOES;
+    }
+
+    return function(...args) {
+      makeCurrentContext(this._context);
+      resizeCanvasIfChanged(this._context);
+      return origFn.call(ext, ...args);
+    }
+  }
+
+  function virutalbindVertexArrayOES(vao) {
+    makeCurrentContext(this._context);
+    resizeCanvasIfChanged(this._context);
+    if (!vao) {
+      vao = this._context._defaultVertexArray;
+    }
+    sharedVAOExtension.bindVertexArrayOES(vao);
+  }
+
+
+  function makeANGLE_instanced_arraysWrapper(ext, origFn, name) {
+    switch (name) {
+      case 'drawArraysInstancedANGLE':
+      case 'drawElementsInstancedANGLE':
+        return createExtDrawWrapper(ext, origFn);
+      break;
+    }
+
+    return function(...args) {
+      makeCurrentContext(this._context);
+      resizeCanvasIfChanged(this._context);
+      return origFn.call(ext, ...args);
+    }
+  }
+
+  function createExtDrawWrapper(ext, origFn) {
+    return function(...args) {
+      // a rendering function was called so we need to copy are drawingBuffer
+      // to the canvas for this context after the current event.
+      beforeDraw(this._context);
+      const result = origFn.call(exts, ...args);
+      afterDraw(this._context);
+      return result;
+    };
   }
 
   function makeWEBGL_draw_buffersWrapper(ext, origFn, name) {
@@ -447,10 +490,6 @@
     };
   }
 
-  function virtualGetSupportedExtensions() {
-    return supportedExtensions;
-  }
-
   function virtualGetContextAttributes() {
     return this._contextAttributes;
   }
@@ -479,6 +518,11 @@
           if (value === gl.COLOR_ATTACHMENT0) {
             return gl.BACK;
           }
+        }
+        break;
+      case 0x85B5: // VERTEX_ARRAY_BINDING_OES
+        if (value === this._defaultVertexArray) {
+          return null;
         }
         break;
     }
@@ -521,21 +565,29 @@
     }
   }
 
+  function beforeDraw(vctx) {
+    makeCurrentContext(vctx);
+    resizeCanvasIfChanged(vctx);
+    clearIfNeeded(vctx);
+  }
+
+  function afterDraw(vctx) {
+    if (isFramebufferBindingNull(vctx)) {
+      vctx._needComposite = true;
+      if (!someContextsNeedRendering) {
+        someContextsNeedRendering = true;
+        setTimeout(renderAllDirtyVirtualCanvases, 0);
+      }
+    }
+  }
+
   function createDrawWrapper(origFn) {
     return function(...args) {
       // a rendering function was called so we need to copy are drawingBuffer
       // to the canvas for this context after the current event.
-      makeCurrentContext(this);
-      resizeCanvasIfChanged(this);
-      clearIfNeeded(this);
+      beforeDraw(this);
       const result = origFn.call(sharedWebGLContext, ...args);
-      if (isFramebufferBindingNull(this)) {
-        this._needComposite = true;
-        if (!someContextsNeedRendering) {
-          someContextsNeedRendering = true;
-          setTimeout(renderAllDirtyVirtualCanvases, 0);
-        }
-      }
+      afterDraw(this);
       return result;
     };
   }
@@ -634,22 +686,28 @@
 
     // bindings
     state.arrayBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
-    state.elementArrayBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
     state.renderbuffer = gl.getParameter(gl.RENDERBUFFER_BINDING);
     state.framebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
 
     // save attributes
-
-    for (let i = 0; i < numAttributes; ++i) {
-      const attrib = state.attributes[i];
-      attrib.buffer     = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);
-      attrib.enabled    = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_ENABLED);
-      attrib.size       = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_SIZE);
-      attrib.stride     = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_STRIDE);
-      attrib.type       = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_TYPE);
-      attrib.normalized = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_NORMALIZED);
-      attrib.value      = gl.getVertexAttrib(i, gl.CURRENT_VERTEX_ATTRIB);
-      attrib.offset     = gl.getVertexAttribOffset(i, gl.VERTEX_ATTRIB_ARRAY_POINTER);
+    if (sharedVAOExtension) {
+      state.vertexArray = gl.getParameter(sharedVAOExtension.VERTEX_ARRAY_BINDING_OES);
+    } else {
+      for (let i = 0; i < numAttributes; ++i) {
+        const attrib = state.attributes[i];
+        attrib.buffer     = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);
+        attrib.enabled    = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_ENABLED);
+        attrib.size       = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_SIZE);
+        attrib.stride     = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_STRIDE);
+        attrib.type       = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_TYPE);
+        attrib.normalized = gl.getVertexAttrib(i, gl.VERTEX_ATTRIB_ARRAY_NORMALIZED);
+        attrib.value      = gl.getVertexAttrib(i, gl.CURRENT_VERTEX_ATTRIB);
+        attrib.offset     = gl.getVertexAttribOffset(i, gl.VERTEX_ATTRIB_ARRAY_POINTER);
+        if (sharedInstanceExtension) {
+          attrib.divisor = gl.getVertexAttrib(i, sharedInstanceExtension.VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
+        }
+      }
+      state.elementArrayBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
     }
 
     state.blend = gl.getParameter(gl.BLEND);
@@ -732,21 +790,28 @@
     gl.activeTexture(state.activeTexture);
 
     // restore attributes
-    for (let i = 0; i < numAttributes; ++i) {
-      const attrib = state.attributes[i];
-      if (attrib.enabled) {
-        gl.enableVertexAttribArray(i);
-      } else {
-        gl.disableVertexAttribArray(i);
+    if (sharedVAOExtension) {
+      sharedVAOExtension.bindVertexArrayOES(state.vertexArray);
+    } else {
+      for (let i = 0; i < numAttributes; ++i) {
+        const attrib = state.attributes[i];
+        if (attrib.enabled) {
+          gl.enableVertexAttribArray(i);
+        } else {
+          gl.disableVertexAttribArray(i);
+        }
+        gl.vertexAttrib4fv(i, attrib.value);
+        gl.bindBuffer(gl.ARRAY_BUFFER, attrib.buffer);
+        gl.vertexAttribPointer(i, attrib.size, attrib.type, attrib.normalized, attrib.stride, attrib.offset);
+        if (sharedInstanceExtension) {
+          sharedInstanceExtension.vertexAttribDivisorANGLE(i, attrib.divisor);
+        }
       }
-      gl.vertexAttrib4fv(i, attrib.value);
-      gl.bindBuffer(gl.ARRAY_BUFFER, attrib.buffer);
-      gl.vertexAttribPointer(i, attrib.size, attrib.type, attrib.normalized, attrib.stride, attrib.offset);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.elementArrayBuffer);
     }
 
     // bindings'
     gl.bindBuffer(gl.ARRAY_BUFFER, state.arrayBuffer);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.elementArrayBuffer);
     gl.bindRenderbuffer(gl.RENDERBUFFER, state.renderbuffer);
     gl.bindFramebuffer(gl.FRAMEBUFFER, state.framebuffer);
 
