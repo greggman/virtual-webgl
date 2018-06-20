@@ -15,19 +15,27 @@
       width: 600px;
       height: 500px;
     }
+    .samples>div {
+        border: 1px solid black;
+        padding: 5px;
+        display: inline-block;
+    }
     </style>
   </head>
   <body>
     <h1>Look Ma, Just one WebGL Context</h1>
-    <canvas id="c1" width="100" height="100"></canvas>
-    <canvas id="c2"></canvas>
-    <canvas id="c3" width="64" height="64"></canvas>
-    <canvas id="c4" width="95" height="64"></canvas>
-    <canvas id="c5" width="64" height="64"></canvas>
-    <canvas id="c6" width="64" height="64"></canvas>
-    <canvas id="c7" width="64" height="64"></canvas>
-    <canvas id="c8" width="400" height="300"></canvas>
-    <canvas id="c9" width="400" height="300"></canvas>
+    <div class="samples">
+    <div><canvas id="c1" width="100" height="100"></canvas><div>generic webgl</div></div>
+    <div><canvas id="c2"></canvas><div>generic webgl no size</div></div>
+    <div><canvas id="c3" width="64" height="64"></canvas><div>red</div></div>
+    <div><canvas id="c4" width="95" height="64"></canvas><div>blue</div></div>
+    <div><canvas id="c5" width="64" height="64"></canvas><div>purple with alpha .5 but alpha:false</div></div>
+    <div><canvas id="c6" width="64" height="64"></canvas><div>green .5 with alpha .5 alpha true (default)</div></div>
+    <div><canvas id="c7" width="64" height="64"></canvas><div>green 1 with alpha .5 premultipliedAlpha: false</div></div>
+    <div><canvas id="c8" width="400" height="300"></canvas><div>preserveDrawingBuffer: true</div></div>
+    <div><canvas id="c9" width="400" height="300"></canvas><div>three.js</div></div>
+    <div><canvas id="c10" width="128" height="128"></canvas><div>WEBGL_draw_buffers</div></div>
+    </div>
     <div id="map"></div>
   </body>
   <script src="../src/virtual-webgl.js"></script>
@@ -527,6 +535,121 @@ var map = new mapboxgl.Map({
     requestAnimationFrame(render);
   }
   main9();
+  </script>
+  <script>
+  function main10() {
+    const gl = document.querySelector("#c10").getContext("webgl");
+    const ext = gl.getExtension("WEBGL_draw_buffers");
+    const vs = `
+    uniform float u_pointSize;
+    void main() {
+      gl_Position = vec4(0, 0, 0, 1);
+      gl_PointSize = u_pointSize;
+    }
+    `;
+
+    const colorFS = `
+    #extension GL_EXT_draw_buffers : require
+    precision mediump float;
+
+    uniform vec4 u_colors[4];
+
+    void main() {
+      gl_FragData[0] = u_colors[0];
+      gl_FragData[1] = u_colors[1];
+      gl_FragData[2] = u_colors[2];
+      gl_FragData[3] = u_colors[3];
+    }
+    `;
+
+    const arrayFS = `
+    precision mediump float;
+
+    uniform sampler2D u_texture[4];
+
+    void main() {
+      vec4 color = vec4(0);
+      float s = floor(mod(gl_FragCoord.x / 16., 4.));
+      for(int i = 0; i < 4; ++i) {
+        float t = float(i);
+        vec4 c = texture2D(u_texture[i], vec2(0));
+        color = mix(color, c, step(t - .5, s) * step(s, t + .5));
+      }
+      gl_FragColor = color;
+    }
+    `;
+
+    const colorProgramInfo = twgl.createProgramInfo(gl, [vs, colorFS]);
+    const arrayProgramInfo = twgl.createProgramInfo(gl, [vs, arrayFS]);
+
+    const fb = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+    const textures = [];
+    for (let i = 0; i < 4; ++i) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, tex, 0);
+      textures.push(tex);
+    }
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      console.error("frame buffer not complete");
+    }
+
+    function renderPart1(time) {
+      time *= 0.001;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+      ext.drawBuffersWEBGL([
+        gl.COLOR_ATTACHMENT0 + 0,
+        gl.COLOR_ATTACHMENT0 + 1,
+        gl.COLOR_ATTACHMENT0 + 2,
+        gl.COLOR_ATTACHMENT0 + 3,
+      ]);
+
+      gl.viewport(0, 0, 1, 1);
+      gl.useProgram(colorProgramInfo.program);
+      twgl.setUniforms(colorProgramInfo, {
+        u_pointSize: 64,
+        u_colors: [
+          1, time % 1, 0, 1,
+          0, 1, time * 1.1 % 1, 1,
+          time * 1.2 % 1, 0, 1, 1,
+          1, 1, time * 1.3 % 1, 1,
+        ],
+      });
+      gl.drawArrays(gl.POINTS, 0, 1);
+
+      // split this to leave a mutli-attachment framebuffer
+      // attached to check that state is saved
+      requestAnimationFrame(renderPart2);
+    }
+
+    function renderPart2(time) {
+      time *= 0.001;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      ext.drawBuffersWEBGL([
+        gl.BACK,
+      ]);
+
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.useProgram(arrayProgramInfo.program);
+      twgl.setUniforms(arrayProgramInfo, {
+        u_pointSize: 64 + Math.sin(time) * 64,
+        u_texture: textures,
+      });
+      gl.drawArrays(gl.POINTS, 0, 1);
+      requestAnimationFrame(renderPart1);
+    }
+    requestAnimationFrame(renderPart1);
+  }
+  main10();
   </script>
 </html>
 
