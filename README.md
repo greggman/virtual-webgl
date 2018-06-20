@@ -59,9 +59,7 @@ Include it on your page before other scripts
 
 ## Limits and Issues
 
-At the moment I just wanted to see it work so I only supported WebGL1 and I didn't support
-any extensions that have methods. In particular there's no support for `WebGL_draw_buffers`,
-`OES_vertex_array_object` nor `ANGLE_instanced_arrays`.
+Only WebGL1 is supported
 
 ## Perf
 
