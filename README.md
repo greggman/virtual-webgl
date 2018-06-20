@@ -59,7 +59,27 @@ Include it on your page before other scripts
 
 ## Limits and Issues
 
-Only WebGL1 is supported
+* Only WebGL1 is supported
+
+* There are no checks for errors.
+
+  WebGL (and OpenGL) use a asynchronous command buffer error system
+  which means checking for errors really slows things down so
+  this Virtual WebGL also doesn't check for errors. Your code
+  should not be generating errors in the first place so if it is
+  fix your code.
+
+  Where this might come up? I forget the details of the spec but,
+  lets say you make an invalid program. When you call `gl.useProgram`
+  it will fail and leave the previous program still the current program.
+  so if you call `gl.uniformXXX` you'll be setting the uniforms for
+  the previous current program. With one WebGL app that was your own
+  previous current program. With multiple WebGL apps that could be
+  some other app's current program.
+
+  In any case run your apps without virtual-webgl and make sure they
+  get no errors. Then after try running them with virtual-webgl
+  and they should hopefully still get no errors.
 
 ## Perf
 
