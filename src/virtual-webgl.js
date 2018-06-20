@@ -45,13 +45,21 @@
     OES_element_index_uint: true,
     EXT_texture_filter_anisotropic: true,
     EXT_frag_depth: true,
-    //WEBGL_draw_buffers: true, need to save/restore drawbuffers
+    WEBGL_draw_buffers: true,
     //ANGLE_instanced_arrays: true, need to wrap functions
     OES_texture_float_linear: true,
     OES_texture_half_float_linear: true,
     EXT_blend_minmax: true,
     EXT_shader_texture_lod: true,
   };
+  const extensionInfo = {
+    WEBGL_draw_buffers: {
+      wrapperFnMakerFn: makeWEBGL_draw_buffersWrapper,
+      saveRestoreMakerFn: makeWEBGL_drawBuffersSaveRestoreHelper,
+    },
+  };
+  const extensionSaveRestoreHelpersArray = [];
+  const extensionSaveRestoreHelpers = {};
 
   let currentVirtualContext = null;
   let someContextsNeedRendering;
@@ -59,6 +67,7 @@
   const sharedWebGLContext = document.createElement('canvas').getContext('webgl');
   const numAttributes = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_VERTEX_ATTRIBS);
   const numTextureUnits = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+  let numDrawBuffers;
   const baseState = makeDefaultState(300, 150);
 
   const vs = `
@@ -188,10 +197,6 @@
       // default blend, stencil, zbuffer, culling, viewport etc... state
       this._state = makeDefaultState(canvas.width, canvas.height);
       this._state.framebuffer = this._drawingbufferFramebuffer;
-
-      if (isSupportedExtension('OES_vertex_array_object')) {
-         // this._
-      }
     }
     get drawingBufferWidth() {
       return this.canvas.width;
@@ -354,16 +359,91 @@
       }
 
       const ext = origFn.call(sharedWebGLContext, name);
-      const wrapper = {};
+      const wrapperInfo = extensionInfo[name] || {};
+      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn;
+      const saveRestoreHelper = extensionSaveRestoreHelpers[name];
+      if (!saveRestoreHelper) {
+        const saveRestoreMakerFn = wrapperInfo.saveRestoreMakerFn;
+        if (saveRestoreMakerFn) {
+          const saveRestore = saveRestoreMakerFn(ext);
+          extensionSaveRestoreHelpers[name] = saveRestore;
+          extensionSaveRestoreHelpersArray.push(saveRestore);
+        }
+      }
+
+      const wrapper = {
+        _context: this,
+      };
       for (let key in ext) {
-        const value = ext[key];
+        let value = ext[key];
         if (typeof value === 'function') {
-          throw new Error(`${name}.${key} not implemented`);
+          value = wrapperFnMakerFn(ext, value, name);
         }
         wrapper[key] = value;
       }
 
       return wrapper;
+    };
+  }
+
+  function isFramebufferBindingNull(vctx) {
+    return vctx._state.framebuffer === vctx._drawingbufferFramebuffer;
+  }
+
+  function makeWEBGL_draw_buffersWrapper(ext, origFn, name) {
+    const gl = sharedWebGLContext;
+    const backBuffer = [gl.COLOR_ATTACHMENT0];
+
+    return function(drawingBuffers) {
+      makeCurrentContext(this._context);
+      resizeCanvasIfChanged(this._context);
+      // if the virtual context is bound to canvas then fake it
+      if (isFramebufferBindingNull(this._context)) {
+        // this really isn't checking everything
+        // for example if the user passed in array.length != 1
+        // then we are supposed to generate an error
+        if (drawingBuffers[0] === gl.BACK) {
+          drawingBuffers = backBuffer;
+        }
+      }
+      origFn.call(ext, drawingBuffers);
+    }
+  }
+
+  function makeWEBGL_drawBuffersSaveRestoreHelper(ext) {
+    const gl = sharedWebGLContext;
+    const maxDrawBuffers = gl.getParameter(ext.MAX_DRAW_BUFFERS_WEBGL);
+    const defaultBackDrawBuffers = [gl.BACK];
+    const defaultFBDrawBuffers = [gl.COLOR_ATTACHMENT0];
+    for (let i = 1; i < maxDrawBuffers; ++i) {
+      defaultFBDrawBuffers.push(gl.NONE);
+    }
+
+    function initDrawBufferState(state) {
+      state.drawBuffers = state.framebuffer ? defaultFBDrawBuffers.slice() : defaultBackDrawBuffers.slice();
+    }
+
+    function save(state) {
+      if (!state.drawBuffers) {
+        initDrawBufferState(state);
+      }
+      // remember state.framebuffer is only null for the offscreen canvas
+      const drawBuffers = state.drawBuffers;
+      for (let i = 0; i < drawBuffers.length; ++i) {
+        drawBuffers[i] = gl.getParameter(ext.DRAW_BUFFER0_WEBGL + i);
+      }
+    }
+
+    function restore(state) {
+      if (!state.drawBuffers) {
+        initDrawBufferState(state);
+      }
+      ext.drawBuffersWEBGL(state.drawBuffers);
+    }
+
+    return {
+      save,
+      restore,
     };
   }
 
@@ -388,8 +468,19 @@
     resizeCanvasIfChanged(this);
     const gl = sharedWebGLContext;
     const value = gl.getParameter(pname);
-    if (pname === gl.FRAMEBUFFER_BINDING && value === this._drawingbufferFramebuffer) {
-      return null;
+    switch (pname) {
+      case gl.FRAMEBUFFER_BINDING:
+        if (value === this._drawingbufferFramebuffer) {
+          return null;
+        }
+        break;
+      case 0x8825: // DRAW_BUFFER0_WEBGL
+        if (isFramebufferBindingNull(this)) {
+          if (value === gl.COLOR_ATTACHMENT0) {
+            return gl.BACK;
+          }
+        }
+        break;
     }
     return value;
   }
@@ -401,11 +492,12 @@
     if (bindpoint === WebGLRenderingContext.FRAMEBUFFER) {
       if (framebuffer === null) {
         // bind our drawingBuffer
-        gl.bindFramebuffer(bindpoint, this._drawingbufferFramebuffer);
+        framebuffer = this._drawingbufferFramebuffer;
       }
     }
 
     gl.bindFramebuffer(bindpoint, framebuffer);
+    this._state.framebuffer = framebuffer;
   }
 
   function createWrapper(origFn) {
@@ -436,11 +528,13 @@
       makeCurrentContext(this);
       resizeCanvasIfChanged(this);
       clearIfNeeded(this);
-      this._needComposite = true;
       const result = origFn.call(sharedWebGLContext, ...args);
-      if (!someContextsNeedRendering) {
-        someContextsNeedRendering = true;
-        setTimeout(renderAllDirtyVirtualCanvases, 0);
+      if (isFramebufferBindingNull(this)) {
+        this._needComposite = true;
+        if (!someContextsNeedRendering) {
+          someContextsNeedRendering = true;
+          setTimeout(renderAllDirtyVirtualCanvases, 0);
+        }
       }
       return result;
     };
@@ -453,11 +547,11 @@
 
     // save all current WebGL state on the previous current virtual context
     if (currentVirtualContext) {
-      saveAllState(currentVirtualContext._state);
+      saveAllState(currentVirtualContext._state, currentVirtualContext);
     }
 
-    // restore all state for the
-    restoreAllState(vctx._state);
+    // restore all state for the new context
+    restoreAllState(vctx._state, vctx);
 
     // check if the current state is supposed to be rendering to the canvas.
     // if so bind vctx._drawingbuffer
@@ -522,7 +616,7 @@
     return program;
   }
 
-  function saveAllState(state) {
+  function saveAllState(state, vctx) {
     // save all WebGL state (current bindings, current texture units,
     // current attributes and/or vertex shade object, current program,
     // current blend, stencil, zbuffer, culling, viewport etc... state
@@ -613,9 +707,13 @@
     state.stencilRef = gl.getParameter(gl.STENCIL_REF);
     state.stencilValueMask = gl.getParameter(gl.STENCIL_VALUE_MASK);
     state.stencilWriteMask = gl.getParameter(gl.STENCIL_WRITEMASK);
+
+    for (const fns of extensionSaveRestoreHelpersArray) {
+      fns.save(state, vctx);
+    }
   }
 
-  function restoreAllState(state) {
+  function restoreAllState(state, vctx) {
     // restore all WebGL state (current bindings, current texture units,
     // current attributes and/or vertex shade object, current program,
     // current blend, stencil, zbuffer, culling, viewport etc... state
@@ -694,6 +792,10 @@
     gl.stencilMaskSeparate(gl.BACK, state.stencilBackWriteMask);
     gl.stencilMaskSeparate(gl.FRONT, state.stencilWriteMask);
     gl.clearStencil(state.stencilClearValue);
+
+    for (const fns of extensionSaveRestoreHelpersArray) {
+      fns.restore(state, vctx);
+    }
   }
 
   function enableDisable(gl, feature, enable) {
@@ -711,8 +813,10 @@
     someContextsNeedRendering = false;
 
     // save all current WebGL state on the previous current virtual context
-    saveAllState(currentVirtualContext._state);
-    currentVirtualContext = null;
+    if (currentVirtualContext) {
+      saveAllState(currentVirtualContext._state, currentVirtualContext);
+      currentVirtualContext = null;
+    }
 
     // set the state back to the one for drawing the canvas
     restoreAllState(baseState);
@@ -727,7 +831,7 @@
       const gl = sharedWebGLContext;
 
       // note: not entirely sure what to do here. We need this canvas to be at least as large
-      // as the canvas we're drawing to. Resizing a canvas is slow so I think just makcing
+      // as the canvas we're drawing to. Resizing a canvas is slow so I think just making
       // sure we never get smaller than the largest canvas. At the moment though I'm too lazy
       // to make it smaller.
       const canvas = vctx.canvas;
