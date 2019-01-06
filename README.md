@@ -6,7 +6,7 @@ Virtualizes a single WebGL context into multiple contexts
 and using `alpha: false`, `premultipledAlpha: false`, `preserveDrawingBuffer: true` and some other things.
 
 [A demo of post processing a Unity app from outside Unity](https://greggman.github.io/virtual-webgl/unity-example/index.html).
-Compare to [the original without post processing](https://greggman.github.io/virtual-webgl/unity-example/index.html).
+Compare to [the original without post processing](https://greggman.github.io/virtual-webgl/unity-example/index-original.html).
 
 ## What?
 
