@@ -2,8 +2,10 @@
 
 Virtualizes a single WebGL context into multiple contexts
 
-[Demo of some WebGL apps running with only 1 WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
+[A demo of some WebGL apps running with only 1 WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
 and using `alpha: false`, `premultipledAlpha: false`, `preserveDrawingBuffer: true` and some other things.
+
+[A demo of post processing a Unity app from outside Unity](https://greggman.github.io/virutal-webgl/unity-example/index.html)
 
 ## What?
 
@@ -56,6 +58,22 @@ Include it on your page before other scripts
 ```
 <script src="virtual-webgl.js"></script>
 ```
+
+## Writing your own compositor
+
+A full solution would probably require some other method but ... If you look in
+[unity-example/index.html] you'll this code that (a) disables WebGL2 so that Unity falls
+back to WebGL1 (since this code currently only supports WebGL1), and (b) creates a custom
+compositor that draws a different result than the default compositor.
+
+The idea for the `createCompostor` function is that you probably need different compositors
+for each canvas on the page so it's up to you how to do that. Either check the `canvas` passed
+in and it's ID or keep a count of compositors created and do different things for different ones
+or whatever. If you turn nothing the default compositor will be created for that canvas.
+
+As another example if you wanted to draw a MapGL texture inside THREE.js then you'd probably
+make the one compositor do nothing except record the texture needed to use inside three.
+For three's canvas you'd use the default compositor.
 
 ## Limits and Issues
 
