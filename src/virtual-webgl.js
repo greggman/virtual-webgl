@@ -31,6 +31,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 (function() {
+  const settings = {
+    disableWebGL2: false,
+    compositorCreator() {
+    },
+  };
   const canvasToVirtualContextMap = new Map();
   const extensionInfo = {
     WEBGL_draw_buffers: {
@@ -118,10 +123,11 @@
   saveAllState(baseState);
 
   HTMLCanvasElement.prototype.getContext = (function(origFn) {
-
     return function(type, contextAttributes) {
       if (type === 'webgl' || type === 'experimental-webgl') {
         return createOrGetVirtualWebGLContext(this, type, contextAttributes);
+      } else if (type === 'webgl2' && settings.disableWebGL2) {
+        return null;
       }
       return origFn.call(this, type, contextAttributes);
     };
@@ -132,13 +138,49 @@
     return value === undefined ? defaultValue : value;
   }
 
+  class DefaultCompositor {
+    constructor(canvas, contextAttributes) {
+      this._ctx = canvas.getContext('2d');
+    }
+    composite(gl, texture, canvas, contextAttributes) {
+      // note: not entirely sure what to do here. We need this canvas to be at least as large
+      // as the canvas we're drawing to. Resizing a canvas is slow so I think just making
+      // sure we never get smaller than the largest canvas. At the moment though I'm too lazy
+      // to make it smaller.
+      const ctx = this._ctx;
+      const width = canvas.width;
+      const height = canvas.height;
+      const maxWidth = Math.max(gl.canvas.width, width);
+      const maxHeight = Math.max(gl.canvas.height, height);
+      if (gl.canvas.width !== maxWidth || gl.canvas.height !== maxHeight) {
+        gl.canvas.width = maxWidth;
+        gl.canvas.height = maxHeight;
+      }
+
+      gl.viewport(0, 0, width, height);
+
+      gl.useProgram(contextAttributes.premultipliedAlpha ? premultplyAlphaTrueProgram : premultplyAlphaFalseProgram);
+
+      // draw the drawingbuffer's texture to the offscreen canvas
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      // copy it to target canvas
+      ctx.globalCompositeOperation = 'copy';
+      ctx.drawImage(
+        gl.canvas,
+        0, maxHeight - height, width, height,   // src rect
+        0, 0, width, height);  // dest rect
+    }
+  }
+
   class VirtualWebGLContext {
-    constructor(canvas, contextAttributes = {}) {
+    constructor(canvas, contextAttributes = {}, compositor) {
       const gl = sharedWebGLContext;
       this.canvas = canvas;
       // Should use Symbols or someting to hide these variables from the outside.
 
-      this._ctx = canvas.getContext('2d');
+      this._compositor = compositor;
       this._extensions = {};
       // based on context attributes and canvas.width, canvas.height
       // create a texture and framebuffer
@@ -196,6 +238,12 @@
     }
     get drawingBufferHeight() {
       return this.canvas.height;
+    }
+    composite(gl) {
+      this._compositor.composite(gl, this._drawingbufferTexture, this.canvas, this._contextAttributes);
+      if (!this._preserveDrawingbuffer) {
+        this._needClear = true;
+      }
     }
   }
 
@@ -354,7 +402,7 @@
 
       const ext = origFn.call(sharedWebGLContext, name);
       const wrapperInfo = extensionInfo[name] || {};
-      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn;
+      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn || (() => { console.log("trying to get extension:", name); });
       const saveRestoreHelper = extensionSaveRestoreHelpers[name];
       if (!saveRestoreHelper) {
         const saveRestoreMakerFn = wrapperInfo.saveRestoreMakerFn;
@@ -642,7 +690,8 @@
       return existingVirtualCtx;
     }
 
-    const newVirtualCtx = new VirtualWebGLContext(canvas, contextAttributes);
+    const compositor = settings.compositorCreator(canvas, type, contextAttributes) || new DefaultCompositor(canvas, type, contextAttributes);
+    const newVirtualCtx = new VirtualWebGLContext(canvas, contextAttributes, compositor);
     canvasToVirtualContextMap.set(canvas, newVirtualCtx);
 
     return newVirtualCtx;
@@ -892,40 +941,7 @@
       }
 
       vctx._needComposite = false;
-
-      const gl = sharedWebGLContext;
-
-      // note: not entirely sure what to do here. We need this canvas to be at least as large
-      // as the canvas we're drawing to. Resizing a canvas is slow so I think just making
-      // sure we never get smaller than the largest canvas. At the moment though I'm too lazy
-      // to make it smaller.
-      const canvas = vctx.canvas;
-      const width = canvas.width;
-      const height = canvas.height;
-      const maxWidth = Math.max(gl.canvas.width, width);
-      const maxHeight = Math.max(gl.canvas.height, height);
-      if (gl.canvas.width !== maxWidth || gl.canvas.height !== maxHeight) {
-        gl.canvas.width = maxWidth;
-        gl.canvas.height = maxHeight;
-      }
-
-      gl.viewport(0, 0, width, height);
-
-      gl.useProgram(vctx._contextAttributes.premultipliedAlpha ? premultplyAlphaTrueProgram : premultplyAlphaFalseProgram);
-
-      // draw the drawingbuffer's texture to the offscreen canvas
-      gl.bindTexture(gl.TEXTURE_2D, vctx._drawingbufferTexture);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-      // copy it to target canvas
-      vctx._ctx.globalCompositeOperation = 'copy';
-      vctx._ctx.drawImage(
-        gl.canvas,
-        0, maxHeight - height, width, height,   // src rect
-        0, 0, width, height);  // dest rect
-      if (!vctx._preserveDrawingbuffer) {
-        vctx._needClear = true;
-      }
+      vctx.composite(sharedWebGLContext);
     }
   }
 
@@ -938,7 +954,15 @@
       });
     };
 
-  }(window.requestAnimationFrame));
+  }(window.requestAnimationFrame))
+
+  function setup(options) {
+    Object.assign(settings, options);
+  }
+
+  window.virtualWebGL = {
+    setup,
+  };
 
 }());
 
