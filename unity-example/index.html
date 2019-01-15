@@ -72,6 +72,10 @@
             0, 0, 1,
           ]);
 
+          gl.uniform1fv(this._timeLoc, [t * 1.1, t * 1.2, t * 1.3, 0]);
+          gl.uniform1fv(this._periodLoc, [.11, -.12, .13, 0]);
+          gl.uniform1fv(this._strengthLoc, [.01, .01, .01, 0]);
+
 
           // draw the drawingbuffer's texture to the offscreen canvas
           gl.bindTexture(gl.TEXTURE_2D, canvasTexture);
@@ -101,16 +105,22 @@
           varying vec2 v_texcoord;
           uniform sampler2D u_tex;
           uniform mat3 u_texMatrix[4];
+          uniform float u_time[4];
+          uniform float u_strength[4];
+          uniform float u_period[4];
           void main() {
             gl_FragColor = vec4(
-              texture2D(u_tex, (u_texMatrix[0] * vec3(v_texcoord, 1)).xy).r,
-              texture2D(u_tex, (u_texMatrix[1] * vec3(v_texcoord, 1)).xy).g,
-              texture2D(u_tex, (u_texMatrix[2] * vec3(v_texcoord, 1)).xy).b,
-              texture2D(u_tex, (u_texMatrix[3] * vec3(v_texcoord, 1)).xy).a);
+              texture2D(u_tex, (u_texMatrix[0] * vec3(v_texcoord, 1)).xy + sin(gl_FragCoord.y * u_period[0] + u_time[0]) * u_strength[0]).r,
+              texture2D(u_tex, (u_texMatrix[1] * vec3(v_texcoord, 1)).xy + sin(gl_FragCoord.y * u_period[1] + u_time[1]) * u_strength[1]).g,
+              texture2D(u_tex, (u_texMatrix[2] * vec3(v_texcoord, 1)).xy + sin(gl_FragCoord.y * u_period[2] + u_time[2]) * u_strength[2]).b,
+              texture2D(u_tex, (u_texMatrix[3] * vec3(v_texcoord, 1)).xy + sin(gl_FragCoord.y * u_period[3] + u_time[3]) * u_strength[3]).a);
           }
           `;
           this._program = createProgram(gl, [vs, postProcessFs]);
           this._texMatLoc = gl.getUniformLocation(this._program, "u_texMatrix");
+          this._timeLoc = gl.getUniformLocation(this._program, "u_time");
+          this._strengthLoc = gl.getUniformLocation(this._program, "u_strength");
+          this._periodLoc = gl.getUniformLocation(this._program, "u_period");
         }
       }
       virtualWebGL.setup({
@@ -133,7 +143,7 @@
       <div class="footer">
         <div class="webgl-logo"></div>
         <div class="fullscreen" onclick="gameInstance.SetFullscreen(1)"></div>
-        <div class="title">SpinningCube</div>
+        <div class="title">SpinningCube (post processing outside unity)</div>
       </div>
     </div>
   </body>
