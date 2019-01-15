@@ -139,7 +139,7 @@
   }
 
   class DefaultCompositor {
-    constructor(canvas, contextAttributes) {
+    constructor(canvas) {
       this._ctx = canvas.getContext('2d');
     }
     composite(gl, texture, canvas, contextAttributes) {
