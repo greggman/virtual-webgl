@@ -115,6 +115,13 @@ to make each of the canvases use a `Canvas2DRendernigContext` and call `drawImag
 That could be solved maybe with `OffscreenCanvas` and `ImageBitmapRenderingContext`
 but those features haven't shipped without a flag as of 2018-06-05.
 
+It could also be solved using the techiques used in [this sample](http://twgljs.org/examples/itemlist.html)
+
+Basically put the canvas of the shared GL context full window size in the background and instead
+of compositing by copying to a 2D canvas, composite by setting the viewport/scissor and render to
+the shared GL context's canvas. The limitation of course is that the result won't appear in front
+of other elements but usually that's ok.
+
 ## License
 
 MIT (see top of js file)
