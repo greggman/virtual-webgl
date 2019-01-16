@@ -8,7 +8,7 @@ and using `alpha: false`, `premultipledAlpha: false`, `preserveDrawingBuffer: tr
 [A demo of post processing a Unity app from outside Unity](https://greggman.github.io/virtual-webgl/unity-example/index.html).
 Compare to [the original without post processing](https://greggman.github.io/virtual-webgl/unity-example/index-original.html).
 
-[A demo displaying mapbox-gl results on a cube](https://greggman.github.io/mapbox-gl/unity-example/index.html).
+[A demo displaying mapbox-gl results on a cube](https://greggman.github.io/mapbox-gl/index.html).
 
 ## What?
 
