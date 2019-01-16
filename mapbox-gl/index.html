@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <title>Mapbox-GL - Virutal WebGL</title>
+    <script src="../src/virtual-webgl.js"></script>
+    <style>
+        body { margin:0; padding:0; }
+        #map { position:absolute; top:0; bottom:0; width:100%; visibility: none; }
+        #foo { position:absolute; top:0; bottom:0; width:100%; pointer-events: none; }
+        #info { position: absolute; color: white; top: 1em; left: 1em; background: rgba(0,0,0,.9); padding: 1em; }
+    </style>
+    <script>
+    {
+      function createProgram(gl, shaderSources) {
+        const program = gl.createProgram();
+        [gl.VERTEX_SHADER, gl.FRAGMENT_SHADER].forEach((type, ndx) => {
+          const shader = gl.createShader(type);
+          gl.shaderSource(shader, shaderSources[ndx]);
+          gl.compileShader(shader);
+          if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error(gl.getShaderInfoLog(shader)); // eslint-disable-line
+          }
+          gl.attachShader(program, shader);
+        });
+        gl.bindAttribLocation(program, 0, 'position');
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          console.error(gl.getProgramInfoLog(program)); // eslint-disable-line
+        }
+
+        return program;
+      }
+
+      class CaptureCompositor {
+        constructor(canvas, type, contextAttributes) {
+        }
+        composite(gl, canvasTexture, canvas, contextAttributes) {
+          this.canvasTexture = canvasTexture;
+          this.canvas = canvas;
+          this.contextAttributes = contextAttributes;
+        }
+      }
+      let compositorId = 0;
+      virtualWebGL.setup({
+        disableWebGL2: true,
+        compositorCreator(...args) {
+          ++compositorId;
+          switch (compositorId) {
+            case 1:
+              return undefined;
+            case 2:
+              window.mapboxGLInfo = new CaptureCompositor(...args);
+              return window.mapboxGLInfo;
+            default:
+              throw new Error('unexpected compostitor request')
+              break;
+          }
+        },
+      });
+    }
+    </script>
+    <script src="../example/js/twgl-full.min.js"></script>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v0.52.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v0.52.0/mapbox-gl.css' rel='stylesheet' />
+  </head>
+  <body>
+    <div id='map'></div>
+    <div id='foo'></div>
+    <div id='info'>Using Virtual-WebGL to mess with Mapbox-GL</div>
+    <script>
+    'use strict';
+    const gl = document.createElement('canvas').getContext('webgl');
+    const foo = document.querySelector('#foo');
+    foo.appendChild(gl.canvas);
+    gl.canvas.style.width = '100%';
+    gl.canvas.style.height = '100%';
+    // draw a cube using the mapbox gl texture
+    const vs = `
+      attribute vec4 position;
+      attribute vec2 texcoord;
+      uniform mat4 u_mat;
+      varying vec2 v_texcoord;
+      void main() {
+        gl_Position = u_mat * position;
+        v_texcoord = texcoord;
+      }
+    `;
+    const fs = `
+      precision mediump float;
+      uniform sampler2D u_tex;
+      varying vec2 v_texcoord;
+      void main() {
+        gl_FragColor = texture2D(u_tex, v_texcoord);
+      }
+    `;
+    const programInfo = twgl.createProgramInfo(gl, [vs, fs]);
+    const bufferInfo = twgl.primitives.createCubeBufferInfo(gl, 1);
+    const m4 = twgl.m4;
+    function render(time) {
+      time *= 0.0001;
+      if (window.mapboxGLInfo && window.mapboxGLInfo.canvasTexture) {
+        twgl.resizeCanvasToDisplaySize(gl.canvas);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.enable(gl.CULL_FACE);
+        gl.enable(gl.DEPTH_TEST);
+        const fov = 60 * Math.PI / 180;
+        const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+        const projection = m4.perspective(fov, aspect, 0.1, 20);
+        const eye = [0, 0, 1.5];
+        const target = [0, 0, 0];
+        const up = [0, 1, 0];
+        const camera = m4.lookAt(eye, target, up);
+        const view = m4.inverse(camera);
+        let wvm = m4.multiply(projection, view);
+        wvm = m4.rotateX(wvm, time);
+        wvm = m4.rotateY(wvm, time * 1.1);
+        gl.useProgram(programInfo.program);
+        twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
+        twgl.setUniforms(programInfo, {
+          u_tex: window.mapboxGLInfo.canvasTexture,
+          u_mat: wvm,
+        });
+        twgl.drawBufferInfo(gl, bufferInfo);
+      }
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+    </script>
+    <script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiZ3JlZ2dtYW4iLCJhIjoiY2pxeXVqcnVkMDdlZTRhcGI2bnk2aTdvdSJ9.x21cueuKCuM05wz4_cdLRw';
+var map = new mapboxgl.Map({
+    style: 'mapbox://styles/mapbox/bright-v9',
+    center: [-74.0066, 40.7135],
+    zoom: 15.5,
+    pitch: 45,
+    bearing: -17.6,
+    container: 'map'
+});
+
+// The 'building' layer in the mapbox-streets vector source contains building-height
+// data from OpenStreetMap.
+map.on('load', function() {
+    // Insert the layer beneath any symbol layer.
+    var layers = map.getStyle().layers;
+
+    var labelLayerId;
+    for (var i = 0; i < layers.length; i++) {
+        if (layers[i].type === 'symbol' && layers[i].layout['text-field']) {
+            labelLayerId = layers[i].id;
+            break;
+        }
+    }
+
+    map.addLayer({
+        'id': '3d-buildings',
+        'source': 'composite',
+        'source-layer': 'building',
+        'filter': ['==', 'extrude', 'true'],
+        'type': 'fill-extrusion',
+        'minzoom': 15,
+        'paint': {
+            'fill-extrusion-color': '#aaa',
+
+            // use an 'interpolate' expression to add a smooth transition effect to the
+            // buildings as the user zooms in
+            'fill-extrusion-height': [
+                "interpolate", ["linear"], ["zoom"],
+                15, 0,
+                15.05, ["get", "height"]
+            ],
+            'fill-extrusion-base': [
+                "interpolate", ["linear"], ["zoom"],
+                15, 0,
+                15.05, ["get", "min_height"]
+            ],
+            'fill-extrusion-opacity': .6
+        }
+    }, labelLayerId);
+});
+    </script>
+  </body>
+</html>
