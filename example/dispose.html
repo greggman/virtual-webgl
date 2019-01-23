@@ -1,0 +1,85 @@
+<div>
+  num contexts: <span id="num"></span>
+</div>
+<canvas id="c"></canvas>
+<script src="../src/virtual-webgl.js"></script>
+<script src="js/three.js"></script>
+<script>
+'use strict';
+
+/* global THREE */
+
+function makeScene(canvas, color = 0x44aa88, timeout = 0) {
+
+  const renderer = new THREE.WebGLRenderer({canvas: canvas});
+
+  const fov = 75;
+  const aspect = 2;  // the canvas default
+  const near = 0.1;
+  const far = 5;
+  const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+  camera.position.z = 2;
+
+  const scene = new THREE.Scene();
+
+  {
+    const color = 0xFFFFFF;
+    const intensity = 1;
+    const light = new THREE.DirectionalLight(color, intensity);
+    light.position.set(-1, 2, 4);
+    scene.add(light);
+  }
+
+  const boxWidth = 1;
+  const boxHeight = 1;
+  const boxDepth = 1;
+  const geometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+
+  const material = new THREE.MeshPhongMaterial({color});
+
+  const cube = new THREE.Mesh(geometry, material);
+  scene.add(cube);
+
+  let requestId;
+  function render(time) {
+    time *= 0.001;  // convert time to seconds
+
+    cube.rotation.x = time;
+    cube.rotation.y = time;
+
+    renderer.render(scene, camera);
+
+    requestId = requestAnimationFrame(render);
+  }
+  requestId = requestAnimationFrame(render);
+
+  if (timeout) {
+    setTimeout(() => {
+      cancelAnimationFrame(requestId);
+      // take the canvas out of the dom
+      canvas.parentElement.removeChild(canvas);
+      // manually free all three objects that hold GPU resoures
+      geometry.dispose();
+      material.dispose();
+      // hold on to the context incase the rendered forgets it
+      const gl = renderer.context;
+      // dispose the rendered in case it has any GPU resources
+      renderer.dispose();
+      // dispose the virutal context
+      gl.dispose(); // added by virtual-webgl
+    }, timeout);
+  }
+}
+
+makeScene(document.querySelector('#c'));
+
+const numElem = document.querySelector('#num');
+let count = 1;
+setInterval(() => {
+  numElem.textContent = ++count;
+  const canvas = document.createElement("canvas");
+  document.body.appendChild(canvas);
+  makeScene(canvas, Math.random() * 0xFFFFFF | 0, 500);
+}, 1000);
+
+</script>
