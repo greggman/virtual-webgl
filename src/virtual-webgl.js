@@ -138,6 +138,12 @@
     return value === undefined ? defaultValue : value;
   }
 
+  function errorDisposedContext(fnName) {
+    return function() {
+      throw new Error(`tried to call ${fnName} on disposed context`);
+    };
+  }
+
   class DefaultCompositor {
     constructor(canvas) {
       this._ctx = canvas.getContext('2d');
@@ -172,15 +178,18 @@
         0, maxHeight - height, width, height,   // src rect
         0, 0, width, height);  // dest rect
     }
+    dispose() {
+    }
   }
 
   class VirtualWebGLContext {
-    constructor(canvas, contextAttributes = {}, compositor) {
+    constructor(canvas, contextAttributes = {}, compositor, disposeHelper) {
       const gl = sharedWebGLContext;
       this.canvas = canvas;
       // Should use Symbols or someting to hide these variables from the outside.
 
       this._compositor = compositor;
+      this._disposeHelper = disposeHelper;
       this._extensions = {};
       // based on context attributes and canvas.width, canvas.height
       // create a texture and framebuffer
@@ -231,6 +240,28 @@
       if (sharedVAOExtension) {
         this._state.vertexArray = sharedVAOExtension.createVertexArrayOES();
         this._defaultVertexArray = this._state.vertexArray;
+      }
+    }
+    dispose() {
+      this._disposeHelper();
+      const gl = sharedWebGLContext;
+      gl.deleteFramebuffer(this._drawingbufferFramebuffer);
+      gl.deleteTexture(this._drawingbufferTexture);
+      if (this._depthRenderbuffer) {
+        gl.deleteRenderbuffer(this._depthRenderbuffer);
+      }
+      if (this._compositor.dispose) {
+        this._compositor.dispose();
+      }
+      for (const [key, value] of Object.entries(this)) {
+        if (typeof value === 'function') {
+          this[key] = errorDisposedContext(key);
+        }
+      }
+      for (const [key, value] of Object.entries(VirtualWebGLContext.prototype)) {
+        if (typeof value === 'function') {
+          this[key] = errorDisposedContext(key);
+        }
       }
     }
     get drawingBufferWidth() {
@@ -691,7 +722,9 @@
     }
 
     const compositor = settings.compositorCreator(canvas, type, contextAttributes) || new DefaultCompositor(canvas, type, contextAttributes);
-    const newVirtualCtx = new VirtualWebGLContext(canvas, contextAttributes, compositor);
+    const newVirtualCtx = new VirtualWebGLContext(canvas, contextAttributes, compositor, () => {
+      canvasToVirtualContextMap.delete(canvas);
+    });
     canvasToVirtualContextMap.set(canvas, newVirtualCtx);
 
     return newVirtualCtx;
