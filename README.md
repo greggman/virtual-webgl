@@ -54,11 +54,8 @@ I suppose you can already do this by just copying the canvas of the first
 app into the second but that copy is probably slow where as just rendering
 to a texture is fast.
 
-To do this you'd probably want to modify this code so that it uses the normal
-virtual context framebuffer for mapbox-gl-js but doesn't try to composite it.
-Then for the three.js virutal context it just draws directly to the canvas.
-You'd need to expose the mapbox-gl-js's virtual context's texture object
-and pass that into three.js
+See the [mapbox-gl demo](https://greggman.github.io/virtual-webgl/mapbox-gl/index.html).
+It creates it's own compositor.
 
 ## How to use?
 
@@ -71,18 +68,20 @@ Include it on your page before other scripts
 ## Writing your own compositor
 
 A full solution would probably require some other method but ... If you look in
-[unity-example/index.html] you'll this code that (a) disables WebGL2 so that Unity falls
-back to WebGL1 (since this code currently only supports WebGL1), and (b) creates a custom
+[unity-example/index.html](https://greggman.github.io/virtual-webgl/unity-example/index.html)
+you'll see code that (a) disables WebGL2 so that Unity falls
+back to WebGL1 (since this virtual-webgl currently only supports WebGL1), and (b) creates a custom
 compositor that draws a different result than the default compositor.
 
 The idea for the `createCompostor` function is that you probably need different compositors
 for each canvas on the page so it's up to you how to do that. Either check the `canvas` passed
 in and it's ID or keep a count of compositors created and do different things for different ones
-or whatever. If you turn nothing the default compositor will be created for that canvas.
+or whatever. If you return nothing/undefined the default compositor will be created for that canvas.
 
 As another example if you wanted to draw a MapGL texture inside THREE.js then you'd probably
 make the one compositor do nothing except record the texture needed to use inside three.
-For three's canvas you'd use the default compositor.
+For three's canvas you'd use the default compositor. [see this](https://greggman.github.io/virtual-webgl/mapbox-gl/index.html).
+Not sure how to use an external WebGL texture in THREE.js so the example uses twgl.
 
 Note: If a compositor has a `dispose` method it will be called if `context.dispose` is called
 to give your custom compositor a chance to clean up.
@@ -90,6 +89,10 @@ to give your custom compositor a chance to clean up.
 ## Limits and Issues
 
 * Only WebGL1 is supported at the moment
+
+  WebGL2 gets harder likely because of issues with queries, sync objects, and various issues related to PBUFFERS
+  and transform feedback. If you ignore those issues then it would be relatively easy. Handling those issues
+  is probably much more work.
 
 * There are no checks for errors.
 
@@ -107,18 +110,27 @@ to give your custom compositor a chance to clean up.
   previous current program. With multiple WebGL apps that could be
   some other app's current program.
 
-  In any case run your apps without virtual-webgl and make sure they
+  That's just one example. Lots of apps don't setup textures correctly
+  at the beginning, start loading images, start rendering, get errors,
+  those errors stop when the image finally downloads. Those kinds of
+  errors could bleed from one context to another.
+
+  So, run your apps without virtual-webgl and make sure they
   get no errors. Then after try running them with virtual-webgl
   and they should hopefully still get no errors.
 
 ## Perf
 
-Saving and restoring all the state is probably pretty dang slow but generally it should
-only happen once per canvas per render so that might not be too bad.
+Saving and restoring all the state is probably pretty dang slow. I tried rendering
+a bunch of 300x150 canvases with a single cube and it can't do 60fps with just a few
+canvases. I even made it ony render the first canvas, no compositing for the others
+and it still couldn't keep perf meaning it's slow and you should use another solution
+if possible.
 
 There are certain low-hanging optimizations. For example you could track the highest used attribute and
 highest used texture unit across contexts and only save and restore up to that highest
-attribute and texture unit since most apps don't use all of them.
+attribute and texture unit since most apps don't use all of them. If your app use VAOs that issue
+disappears.
 
 The other big perf issue is you can't render directly to different canvases so I have
 to make each of the canvases use a `Canvas2DRendernigContext` and call `drawImage`.
@@ -133,6 +145,18 @@ of compositing by copying to a 2D canvas, composite by setting the viewport/scis
 the shared GL context's canvas. The limitation of course is that the result won't appear in front
 of other elements but usually that's ok.
 
+That should be trivial to implement using a custom compositor. The first time you get a compositor
+put the canvas of the shared context (the one that gets passed to `compsite`) in the page and then
+render the texture being composited using `gl.viewport` and `gl.scissor`
+
+If your canvases are not all on screen you could try using [an augmented requestAnimationFrame](https://github.com/greggman/requestanimationframe-fix.js)
+that only calls the requestAnimationFrame callback to draw the canvases that are on screen.
+
+All those optimizaton don't add up to much given the test mentioned in the first paragraph.
+
+Another solution is to track all the state internally rather than querying it from WebGL. There's a lot
+of state to track. You'd track it, and then ideally only lazily restore it if possible.
+
 ## Future Enhancements
 
 virutal-webgl adds a `dispose` method to the virtual contexts letting you free the virutal context.
@@ -144,7 +168,7 @@ It probably would not be that hard to track resources by context and free them o
 resources across contexts it would be a perfectly valid usecase to create a temporary context just to create some
 resources and the dispose of that context but keep the created resources around.
 
-It's perfectly resonable to do this yourself 100% outside virual-webgl. You just augment the context.
+It's perfectly resonable to do this yourself 100% outside virual-webgl. You just *either* augment the context.
 
 Example
 
@@ -172,6 +196,15 @@ Example
     }(gl.dispose);
 
 You'd need to do the same for textures, renderbuffers, framebuffers, vaos, programs, shaders
+
+Or you just make helper functions and make your app call those functions that does the same tracking
+instead of calling functions directly on the context. In other words.
+
+    const buffer = customFunctionThatCreatesABufferAndTracksIt(gl);
+
+instead of
+
+    const buffer = gl.createBuffer();
 
 ## License
 
