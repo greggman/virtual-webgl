@@ -5,6 +5,12 @@ Virtualizes a single WebGL context into multiple contexts
 [A demo of some WebGL apps running with only 1 shared WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
 and using `alpha: false`, `premultipledAlpha: false`, `preserveDrawingBuffer: true` and some other things.
 
+[A demo of creating and disposing of webgl contexts](https://greggman.github.io/virtual-webgl/example/dispose.html).
+WebGL implementations often delete the oldest context when too many are created. Using virtual-webgl you can
+solve this issue. Note you are still responsible for freeing all WebGL resources used by the context. All buffers,
+textures, renderbuffers, framebuffers, shaders, and programs. On top of that when you're done with the context
+call `context.dispose()` which gives virtual-webgl a chance to free its internal stuff as well.
+
 [A demo of post processing a Unity app from outside Unity](https://greggman.github.io/virtual-webgl/unity-example/index.html).
 Compare to [the original without post processing](https://greggman.github.io/virtual-webgl/unity-example/index-original.html).
 
@@ -78,9 +84,12 @@ As another example if you wanted to draw a MapGL texture inside THREE.js then yo
 make the one compositor do nothing except record the texture needed to use inside three.
 For three's canvas you'd use the default compositor.
 
+Note: If a compositor has a `dispose` method it will be called if `context.dispose` is called
+to give your custom compositor a chance to clean up.
+
 ## Limits and Issues
 
-* Only WebGL1 is supported
+* Only WebGL1 is supported at the moment
 
 * There are no checks for errors.
 
@@ -123,6 +132,46 @@ Basically put the canvas of the shared GL context full window size in the backgr
 of compositing by copying to a 2D canvas, composite by setting the viewport/scissor and render to
 the shared GL context's canvas. The limitation of course is that the result won't appear in front
 of other elements but usually that's ok.
+
+## Future Enhancements
+
+virutal-webgl adds a `dispose` method to the virtual contexts letting you free the virutal context.
+As it is it leaves it up to the app to free all of its own GPU resources. `dispose` only disposes of
+internal resources.
+
+It probably would not be that hard to track resources by context and free them on dispose. It's not
+100% clear that's the right thing to do always. For example since virutal-webgl lets you share
+resources across contexts it would be a perfectly valid usecase to create a temporary context just to create some
+resources and the dispose of that context but keep the created resources around.
+
+It's perfectly resonable to do this yourself 100% outside virual-webgl. You just augment the context.
+
+Example
+
+    const buffers = new Set();
+    gl.createBuffer = function(oldFn) {
+      return function() {
+        const b = oldFn.call(this);
+        buffers.set(b);
+        return b;
+      }
+    }(gl.createBuffer);
+    gl.deleteBuffer = function(oldFn) {
+      return function(b) {
+        buffers.delete(b);
+        oldFn.call(this, b);
+      }
+    }(gl.deleteBuffer);
+    gl.dispose = function(oldFn) {
+      [...buffers].forEach(b) {
+        this.deleteBuffer(b);
+      });
+      if (oldFn) {
+        oldFn();
+      }
+    }(gl.dispose);
+
+You'd need to do the same for textures, renderbuffers, framebuffers, vaos, programs, shaders
 
 ## License
 
