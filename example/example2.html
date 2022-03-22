@@ -1,0 +1,1462 @@
+<html lang="en">
+  <head>
+    <title>Look Ma, Just one WebGL2 Context</title>
+    <style>
+    canvas {
+        border: 1px solid red;
+        background-color: #999;
+        background-image: 
+          linear-gradient(45deg, #808080 25%, transparent 25%), linear-gradient(-45deg, #808080 25%, transparent 25%), 
+          linear-gradient(45deg, transparent 75%, #808080 75%), linear-gradient(-45deg, transparent 75%, #808080 75%);
+        background-size: 20px 20px;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+    #map {
+      width: 600px;
+      height: 500px;
+    }
+    .samples>div {
+        border: 1px solid black;
+        padding: 5px;
+        display: inline-block;
+    }
+    </style>
+  </head>
+  <body>
+    <h1>Look Ma, Just one WebGL2 Context</h1>
+    <div class="samples">
+    <div><canvas id="c1" width="100" height="100"></canvas><div>generic webgl</div></div>
+    <div><canvas id="c2"></canvas><div>generic webgl no size</div></div>
+    <div><canvas id="c3" width="64" height="64"></canvas><div>red</div></div>
+    <div><canvas id="c4" width="95" height="64"></canvas><div>blue</div></div>
+    <div><canvas id="c5" width="64" height="64"></canvas><div>purple with alpha .5 but alpha:false</div></div>
+    <div><canvas id="c6" width="64" height="64"></canvas><div>green .5 with alpha .5 alpha true (default)</div></div>
+    <div><canvas id="c7" width="64" height="64"></canvas><div>green 1 with alpha .5 premultipliedAlpha: false</div></div>
+    <div><canvas id="c8" width="400" height="300"></canvas><div>preserveDrawingBuffer: true</div></div>
+    <div><canvas id="c9" width="400" height="300"></canvas><div>three.js</div></div>
+    <div><canvas id="c10" width="128" height="128"></canvas><div>multiple render targets</div></div>
+    <div><canvas id="c11" width="150" height="150"></canvas><div>Instanced Drawing &amp; VertexArray</div></div>
+    <div><canvas id="c12" width="400" height="300"></canvas><div>GPGPU</div></div>
+    </div>
+    <div id="map"></div>
+  </body>
+  <script src="../src/virtual-webgl2.js"></script>
+  <script src="js/twgl-full.min.js"></script>
+  <script src="js/chroma.min.js"></script>
+  <!--
+  <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.js'></script>
+  <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.css' rel='stylesheet' />
+  -->
+</head>
+<body>
+
+  <!-- demo 1 -->
+  <script>
+function main1() {
+  "use strict";
+
+  const vs = `
+  uniform mat4 u_matrix;
+  uniform vec4 u_offsets;
+  uniform vec4 u_centers;
+  uniform vec4 u_mult;
+
+  attribute vec2 a_position;
+  attribute vec4 a_color;
+
+  varying vec4 v_color;
+
+  #define PI 3.14159
+
+  void main() {
+    vec2 offset = mix(u_offsets.xz, u_offsets.yw, a_position.y);
+    float a = u_mult.x * a_position.x * PI * 2.0 + offset.x;//mix(u_offsets.x, u_offsets.y, a_position.y);
+    float c = cos(a * u_mult.y);
+    vec2 xy = vec2(
+      cos(a),
+      sin(a)) * c * offset.y +
+      mix(u_centers.xy, u_centers.zw, a_position.y);
+    gl_Position = u_matrix * vec4(xy, 0, 1);
+    v_color = a_color;
+  }
+  `;
+  const fs = `
+  precision mediump float;
+
+  varying vec4 v_color;
+
+  void main() {
+    gl_FragColor = v_color;
+  }
+  `;
+
+  const m4 = twgl.m4;
+  twgl.setDefaults({attribPrefix: "a_"});
+  const gl = document.querySelector("#c1").getContext("webgl2");
+  const programInfo = twgl.createProgramInfo(gl, [vs, fs]);
+
+  const numLines = 100;
+  const arrays = {
+    position: twgl.primitives.createAugmentedTypedArray(2, numLines * 2),
+    color: twgl.primitives.createAugmentedTypedArray(3, numLines * 2, Uint8Array),
+  };
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  const hue = rand(0, 360);
+  for (let ii = 0; ii < numLines; ++ii) {
+    const u = ii / numLines;
+    const h = (360 + hue + (Math.abs(u - 0.5) * 100)) % 360;
+    const s = Math.sin(u * Math.PI * 2) * 0.25 + 0.75;
+    const v = 1;
+    const color = chroma.hsv(h, s, v);
+    arrays.position.push(u, 1);
+    arrays.color.push(color.rgb());
+    arrays.position.push(u, 0);
+    arrays.color.push(color.brighten().desaturate().rgb());
+  }
+
+  const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+  const offsets = [0, 0, 0, 1];
+  const centers = [0, 0, 0, 0];
+  const mult =    [1, 2, 0, 0];
+  const uniforms = {
+    u_matrix: m4.identity(),
+    u_offsets: offsets,
+    u_centers: centers,
+    u_mult: mult,
+  };
+
+  function render(time) {
+    time *= 0.001;
+
+    twgl.resizeCanvasToDisplaySize(gl.canvas);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    offsets[0] = Math.sin(time);
+    offsets[1] = Math.sin(time * 0.13) * Math.PI * 2;
+    offsets[2] = Math.sin(time * 0.43) * 0.5 + 1.0;
+    offsets[3] = Math.cos(time * 0.17) * 0.5 + 0.5;
+
+    centers[0] = Math.sin(time * 0.163) * 0.5;
+    centers[1] = Math.cos(time * 0.267) * 0.5;
+    centers[2] = Math.sin(time * 0.367) * 0.5;
+    centers[3] = Math.cos(time * 0.497) * 0.5;
+
+    mult[1] = (Math.sin(time * 0.1) * 0.5 + 0.5) * 3;
+
+    gl.lineWidth(25);
+
+    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    m4.ortho(-aspect, aspect, 1, -1, -1, 1, uniforms.u_matrix);
+    gl.useProgram(programInfo.program);
+    twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
+    twgl.setUniforms(programInfo, uniforms);
+
+    twgl.drawBufferInfo(gl, bufferInfo, gl.LINES);
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+}
+main1();
+  </script>
+  <!-- demo 2 -->
+  <script>
+function main2() {
+  "use strict";
+
+  const vs = `
+  uniform mat4 u_worldViewProjection;
+  uniform vec3 u_lightWorldPos;
+  uniform mat4 u_world;
+  uniform mat4 u_viewInverse;
+  uniform mat4 u_worldInverseTranspose;
+
+  attribute vec4 position;
+  attribute vec3 normal;
+  attribute vec2 texcoord;
+
+  varying vec4 v_position;
+  varying vec2 v_texCoord;
+  varying vec3 v_normal;
+  varying vec3 v_surfaceToLight;
+  varying vec3 v_surfaceToView;
+
+  void main() {
+    v_texCoord = texcoord;
+    v_position = u_worldViewProjection * position;
+    v_normal = (u_worldInverseTranspose * vec4(normal, 0)).xyz;
+    v_surfaceToLight = u_lightWorldPos - (u_world * position).xyz;
+    v_surfaceToView = (u_viewInverse[3] - (u_world * position)).xyz;
+    gl_Position = v_position;
+  }
+  `;
+  const fs = `
+  precision mediump float;
+
+  varying vec4 v_position;
+  varying vec2 v_texCoord;
+  varying vec3 v_normal;
+  varying vec3 v_surfaceToLight;
+  varying vec3 v_surfaceToView;
+
+  uniform vec4 u_lightColor;
+  uniform vec4 u_ambient;
+  uniform sampler2D u_diffuse;
+  uniform vec4 u_specular;
+  uniform float u_shininess;
+  uniform float u_specularFactor;
+
+  vec4 lit(float l ,float h, float m) {
+    return vec4(1.0,
+                max(l, 0.0),
+                (l > 0.0) ? pow(max(0.0, h), m) : 0.0,
+                1.0);
+  }
+
+  void main() {
+    vec4 diffuseColor = texture2D(u_diffuse, v_texCoord);
+    vec3 a_normal = normalize(v_normal);
+    vec3 surfaceToLight = normalize(v_surfaceToLight);
+    vec3 surfaceToView = normalize(v_surfaceToView);
+    vec3 halfVector = normalize(surfaceToLight + surfaceToView);
+    vec4 litR = lit(dot(a_normal, surfaceToLight),
+                      dot(a_normal, halfVector), u_shininess);
+    vec4 outColor = vec4((
+    u_lightColor * (diffuseColor * litR.y + diffuseColor * u_ambient +
+                  u_specular * litR.z * u_specularFactor)).rgb,
+        diffuseColor.a);
+    gl_FragColor = outColor;
+  }
+  `;
+
+  const m4 = twgl.m4;
+  const gl = document.querySelector("#c2").getContext("webgl2");
+  twgl.setDefaults({attribPrefix: ""});
+  const programInfo = twgl.createProgramInfo(gl, [vs, fs]);
+  const bufferInfo = twgl.primitives.createCubeBufferInfo(gl, 1);
+
+  const tex = twgl.createTexture(gl, {
+    min: gl.NEAREST,
+    mag: gl.NEAREST,
+    src: [
+      255, 255, 255, 255,
+      192, 192, 192, 255,
+      192, 192, 192, 255,
+      255, 255, 255, 255,
+    ],
+  });
+
+  const uniforms = {
+    u_lightWorldPos: [1, 8, -10],
+    u_lightColor: [1, 0.8, 0.8, 1],
+    u_ambient: [0, 0, 0, 1],
+    u_specular: [1, 1, 1, 1],
+    u_shininess: 50,
+    u_specularFactor: 1,
+    u_diffuse: tex,
+  };
+
+  function render(time) {
+    time *= 0.001;
+    twgl.resizeCanvasToDisplaySize(gl.canvas);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    const fov = 30 * Math.PI / 180;
+    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    const zNear = 0.5;
+    const zFar = 10;
+    const projection = m4.perspective(fov, aspect, zNear, zFar);
+    const eye = [1, 1, -3];
+    const target = [0, 0, 0];
+    const up = [0, 1, 0];
+
+    const camera = m4.lookAt(eye, target, up);
+    const view = m4.inverse(camera);
+    const viewProjection = m4.multiply(projection, view);
+    const world = m4.rotationY(time);
+
+    uniforms.u_viewInverse = camera;
+    uniforms.u_world = world;
+    uniforms.u_worldInverseTranspose = m4.transpose(m4.inverse(world));
+    uniforms.u_worldViewProjection = m4.multiply(viewProjection, world);
+
+    gl.useProgram(programInfo.program);
+    twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
+    twgl.setUniforms(programInfo, uniforms);
+    gl.drawElements(gl.TRIANGLES, bufferInfo.numElements, gl.UNSIGNED_SHORT, 0);
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+}
+main2();
+  </script>
+  <script>
+
+  test('#c3', [1, 0, 0, 1]);
+  test('#c4', [0, 0, 1, 1]);
+  test('#c5', [1, 0, 1, .5], {alpha: false});
+  test('#c6', [0, .5, 0,.5]);
+  test('#c7', [0, 1, 0,.5], {premultipliedAlpha: false});
+
+  function test(selector, color, options) {
+    const gl = document.querySelector(selector).getContext("webgl2", options);
+    gl.clearColor(...color);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  {
+    const gl = document.querySelector('#c8').getContext('webgl2', {preserveDrawingBuffer: true});
+    gl.enable(gl.SCISSOR_TEST);
+    setInterval(() => {
+      gl.scissor(Math.random() * (gl.canvas.width - 10), Math.random() * (gl.canvas.height - 10), 10, 10);
+      gl.clearColor(Math.random(), Math.random(), Math.random(), 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }, 500);
+  }
+
+  </script>
+  <script type="ignore">
+mapboxgl.accessToken = 'undefined';
+var map = new mapboxgl.Map({
+    container: 'map', // container id
+    style: 'mapbox://styles/mapbox/streets-v9', // stylesheet location
+    center: [-74.50, 40], // starting position [lng, lat]
+    zoom: 9 // starting zoom
+});
+  </script>
+
+  <script id="fragment_shader4" type="x-shader/x-fragment">
+
+    uniform float time;
+
+    varying vec2 vUv;
+
+    void main( void ) {
+
+      vec2 position = - 1.0 + 2.0 * vUv;
+
+      float red = abs( sin( position.x * position.y + time / 5.0 ) );
+      float green = abs( sin( position.x * position.y + time / 4.0 ) );
+      float blue = abs( sin( position.x * position.y + time / 3.0 ) );
+      gl_FragColor = vec4( red, green, blue, 1.0 );
+
+    }
+
+  </script>
+
+  <script id="fragment_shader3" type="x-shader/x-fragment">
+
+    uniform float time;
+
+    varying vec2 vUv;
+
+    void main( void ) {
+
+      vec2 position = vUv;
+
+      float color = 0.0;
+      color += sin( position.x * cos( time / 15.0 ) * 80.0 ) + cos( position.y * cos( time / 15.0 ) * 10.0 );
+      color += sin( position.y * sin( time / 10.0 ) * 40.0 ) + cos( position.x * sin( time / 25.0 ) * 40.0 );
+      color += sin( position.x * sin( time / 5.0 ) * 10.0 ) + sin( position.y * sin( time / 35.0 ) * 80.0 );
+      color *= sin( time / 10.0 ) * 0.5;
+
+      gl_FragColor = vec4( vec3( color, color * 0.5, sin( color + time / 3.0 ) * 0.75 ), 1.0 );
+
+    }
+
+  </script>
+
+  <script id="fragment_shader2" type="x-shader/x-fragment">
+
+    uniform float time;
+
+    uniform sampler2D texture2;
+
+    varying vec2 vUv;
+
+    void main( void ) {
+
+      vec2 position = - 1.0 + 2.0 * vUv;
+
+      float a = atan( position.y, position.x );
+      float r = sqrt( dot( position, position ) );
+
+      vec2 uv;
+      uv.x = cos( a ) / r;
+      uv.y = sin( a ) / r;
+      uv /= 10.0;
+      uv += time * 0.05;
+
+      vec3 color = texture2D( texture2, uv ).rgb;
+
+      gl_FragColor = vec4( color * r * 1.5, 1.0 );
+
+    }
+  </script>
+
+  <script id="fragment_shader1" type="x-shader/x-fragment">
+
+    uniform float time;
+
+    varying vec2 vUv;
+
+    void main(void) {
+
+      vec2 p = - 1.0 + 2.0 * vUv;
+      float a = time * 40.0;
+      float d, e, f, g = 1.0 / 40.0 ,h ,i ,r ,q;
+
+      e = 400.0 * ( p.x * 0.5 + 0.5 );
+      f = 400.0 * ( p.y * 0.5 + 0.5 );
+      i = 200.0 + sin( e * g + a / 150.0 ) * 20.0;
+      d = 200.0 + cos( f * g / 2.0 ) * 18.0 + cos( e * g ) * 7.0;
+      r = sqrt( pow( abs( i - e ), 2.0 ) + pow( abs( d - f ), 2.0 ) );
+      q = f / r;
+      e = ( r * cos( q ) ) - a / 2.0;
+      f = ( r * sin( q ) ) - a / 2.0;
+      d = sin( e * g ) * 176.0 + sin( e * g ) * 164.0 + r;
+      h = ( ( f + d ) + a / 2.0 ) * g;
+      i = cos( h + r * p.x / 1.3 ) * ( e + e + a ) + cos( q * g * 6.0 ) * ( r + h / 3.0 );
+      h = sin( f * g ) * 144.0 - sin( e * g ) * 212.0 * p.x;
+      h = ( h + ( f - e ) * q + sin( r - ( a + h ) / 7.0 ) * 10.0 + i / 4.0 ) * g;
+      i += cos( h * 2.3 * sin( a / 350.0 - q ) ) * 184.0 * sin( q - ( r * 4.3 + a / 12.0 ) * g ) + tan( r * g + h ) * 184.0 * cos( r * g + h );
+      i = mod( i / 5.6, 256.0 ) / 64.0;
+      if ( i < 0.0 ) i += 4.0;
+      if ( i >= 2.0 ) i = 4.0 - i;
+      d = r / 350.0;
+      d += sin( d * d * 8.0 ) * 0.52;
+      f = ( sin( a * g ) + 1.0 ) / 2.0;
+      gl_FragColor = vec4( vec3( f * i / 1.6, i / 2.0 + d / 13.0, i ) * d * p.x + vec3( i / 1.3 + d / 8.0, i / 2.0 + d / 18.0, i ) * d * ( 1.0 - p.x ), 1.0 );
+
+    }
+
+  </script>
+
+  <script id="vertexShader" type="x-shader/x-vertex">
+
+    varying vec2 vUv;
+
+    void main()
+    {
+      vUv = uv;
+      vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+      gl_Position = projectionMatrix * mvPosition;
+    }
+
+  </script>
+
+  <script type="module">
+  import * as THREE from './js/three.module.js';
+  // copied from https://threejs.org/examples/webgl_shader2.html
+  function main9() {
+    const canvas = document.querySelector('#c9');
+    const camera = new THREE.PerspectiveCamera(40, 1, 1, 3000);
+    camera.position.z = 4;
+
+    const scene = new THREE.Scene();
+
+    const geometry = new THREE.BoxBufferGeometry(0.75, 0.75, 0.75);
+
+    const uniforms1 = {
+      time: { value: 1.0 },
+    };
+
+    const uniforms2 = {
+      time: { value: 1.0 },
+      texture2: { value: new THREE.TextureLoader().load('textures/disturb.jpg') },
+    };
+
+    uniforms2.texture2.value.wrapS = uniforms2.texture2.value.wrapT = THREE.RepeatWrapping;
+
+    const params = [
+      ['fragment_shader1', uniforms1],
+      ['fragment_shader2', uniforms2],
+      ['fragment_shader3', uniforms1],
+      ['fragment_shader4', uniforms1],
+    ];
+
+    for(let i = 0; i < params.length; ++i) {
+      const material = new THREE.ShaderMaterial({
+        uniforms: params[i][1],
+        vertexShader: document.getElementById('vertexShader').textContent,
+        fragmentShader: document.getElementById(params[i][0]).textContent,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.x = i - (params.length - 1) / 2;
+      mesh.position.y = i % 2 - 0.5;
+      scene.add(mesh);
+    }
+
+    const renderer = new THREE.WebGLRenderer({canvas: canvas});
+
+    function resize() {
+      const canvas = renderer.domElement;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (canvas.width !== width || canvas.height !== height) {
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
+    }
+
+    function render(time) {
+      time *= 0.001;
+
+      resize();
+
+      uniforms1.time.value = time * 5;
+      uniforms2.time.value = time;
+
+      for (let i = 0; i < scene.children.length; ++i) {
+        const object = scene.children[i];
+
+        object.rotation.y = time * 0.5 * (i % 2 ? 1 : -1);
+        object.rotation.x = time * 0.5 * (i % 2 ? -1 : 1);
+      }
+
+      renderer.render(scene, camera);
+
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+  }
+  main9();
+  </script>
+  <script>
+  function main10() {
+    const gl = document.querySelector("#c10").getContext("webgl2");
+    const vs = `#version 300 es
+    uniform float u_pointSize;
+    void main() {
+      gl_Position = vec4(0, 0, 0, 1);
+      gl_PointSize = u_pointSize;
+    }
+    `;
+
+    const colorFS = `#version 300 es
+    precision mediump float;
+
+    uniform vec4 u_colors[4];
+
+    out vec4 fragData[4];
+    void main() {
+      fragData[0] = u_colors[0];
+      fragData[1] = u_colors[1];
+      fragData[2] = u_colors[2];
+      fragData[3] = u_colors[3];
+    }
+    `;
+
+    const arrayFS = `#version 300 es
+    precision mediump float;
+
+    uniform sampler2D u_texture[4];
+
+    out vec4 fragColor;
+    void main() {
+      vec4 color = vec4(0);
+      float s = floor(mod(gl_FragCoord.x / 16., 4.));
+      vec4 tt[4];
+      tt[0] = texture(u_texture[0], vec2(0));
+      tt[1] = texture(u_texture[1], vec2(0));
+      tt[2] = texture(u_texture[2], vec2(0));
+      tt[3] = texture(u_texture[3], vec2(0));
+
+      for(int i = 0; i < 4; ++i) {
+        float t = float(i);
+        vec4 c = tt[i];
+        color = mix(color, c, step(t - .5, s) * step(s, t + .5));
+      }
+      fragColor = color;
+    }
+    `;
+
+    const colorProgramInfo = twgl.createProgramInfo(gl, [vs, colorFS]);
+    const arrayProgramInfo = twgl.createProgramInfo(gl, [vs, arrayFS]);
+
+    const fb = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+    const textures = [];
+    for (let i = 0; i < 4; ++i) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, tex, 0);
+      textures.push(tex);
+    }
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      console.error("frame buffer not complete");
+    }
+
+    function renderPart1(time) {
+      time *= 0.001;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+
+      gl.drawBuffers([
+        gl.COLOR_ATTACHMENT0 + 0,
+        gl.COLOR_ATTACHMENT0 + 1,
+        gl.COLOR_ATTACHMENT0 + 2,
+        gl.COLOR_ATTACHMENT0 + 3,
+      ]);
+
+      gl.viewport(0, 0, 1, 1);
+      gl.useProgram(colorProgramInfo.program);
+      twgl.setUniforms(colorProgramInfo, {
+        u_pointSize: 64,
+        u_colors: [
+          1, time % 1, 0, 1,
+          0, 1, time * 1.1 % 1, 1,
+          time * 1.2 % 1, 0, 1, 1,
+          1, 1, time * 1.3 % 1, 1,
+        ],
+      });
+      gl.drawArrays(gl.POINTS, 0, 1);
+
+      // split this to leave a multi-attachment framebuffer
+      // attached to check that state is saved
+      requestAnimationFrame(renderPart2);
+    }
+
+    function renderPart2(time) {
+      time *= 0.001;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      gl.drawBuffers([
+        gl.BACK,
+      ]);
+
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.useProgram(arrayProgramInfo.program);
+      twgl.setUniforms(arrayProgramInfo, {
+        u_pointSize: 64 + Math.sin(time) * 64,
+        u_texture: textures,
+      });
+      gl.drawArrays(gl.POINTS, 0, 1);
+      requestAnimationFrame(renderPart1);
+    }
+    requestAnimationFrame(renderPart1);
+  }
+  main10();
+  </script>
+  <script>
+function main11() {
+  const vs = `
+  uniform mat4 u_viewProjection;
+  uniform vec3 u_lightWorldPos;
+  uniform mat4 u_viewInverse;
+
+  attribute vec4 instanceColor;
+  attribute mat4 instanceWorld;
+  attribute vec4 position;
+  attribute vec3 normal;
+
+  varying vec4 v_position;
+  varying vec2 v_texCoord;
+  varying vec3 v_normal;
+  varying vec3 v_surfaceToLight;
+  varying vec3 v_surfaceToView;
+  varying vec4 v_color;
+
+  void main() {
+    v_color = instanceColor;
+    vec4 worldPosition = instanceWorld * position;
+    v_position = u_viewProjection * worldPosition;
+    v_normal = (instanceWorld * vec4(normal, 0)).xyz;
+    v_surfaceToLight = u_lightWorldPos - worldPosition.xyz;
+    v_surfaceToView = u_viewInverse[3].xyz - worldPosition.xyz;
+    gl_Position = v_position;
+  }
+  `;
+  const fs = `
+    precision mediump float;
+
+    varying vec4 v_position;
+    varying vec3 v_normal;
+    varying vec3 v_surfaceToLight;
+    varying vec3 v_surfaceToView;
+    varying vec4 v_color;
+
+    uniform vec4 u_lightColor;
+    uniform vec4 u_ambient;
+    uniform vec4 u_specular;
+    uniform float u_shininess;
+    uniform float u_specularFactor;
+
+    vec4 lit(float l ,float h, float m) {
+      return vec4(1.0,
+                  max(l, 0.0),
+                  (l > 0.0) ? pow(max(0.0, h), m) : 0.0,
+                  1.0);
+    }
+
+    void main() {
+      vec4 diffuseColor = v_color;
+      vec3 a_normal = normalize(v_normal);
+      vec3 surfaceToLight = normalize(v_surfaceToLight);
+      vec3 surfaceToView = normalize(v_surfaceToView);
+      vec3 halfVector = normalize(surfaceToLight + surfaceToView);
+      vec4 litR = lit(dot(a_normal, surfaceToLight),
+                        dot(a_normal, halfVector), u_shininess);
+      vec4 outColor = vec4((
+      u_lightColor * (diffuseColor * litR.y + diffuseColor * u_ambient +
+                    u_specular * litR.z * u_specularFactor)).rgb,
+          diffuseColor.a);
+      gl_FragColor = outColor;
+    }
+  `;
+  const m4 = twgl.m4;
+  const gl = document.querySelector("#c11").getContext("webgl2");
+  twgl.addExtensionsToContext(gl);
+  if (!gl.drawArraysInstanced || !gl.createVertexArray) {
+    alert("need drawArraysInstanced and createVertexArray"); // eslint-disable-line
+    return;
+  }
+  const programInfo = twgl.createProgramInfo(gl, [vs, fs]);
+
+  function rand(min, max) {
+    if (max === undefined) {
+      max = min;
+      min = 0;
+    }
+    return min + Math.random() * (max - min);
+  }
+
+  const numInstances = 1000;
+  const instanceWorlds = new Float32Array(numInstances * 16);
+  const instanceColors = [];
+  const r = 20;
+  for (let i = 0; i < numInstances; ++i) {
+    const mat = new Float32Array(instanceWorlds.buffer, i * 16 * 4, 16);
+    m4.translation([rand(-r, r), rand(-r, r), rand(-r, r)], mat);
+    m4.rotateZ(mat, rand(0, Math.PI * 2), mat);
+    m4.rotateX(mat, rand(0, Math.PI * 2), mat);
+    instanceColors.push(rand(1), rand(1), rand(1));
+  }
+  const arrays = twgl.primitives.createCubeVertices();
+  Object.assign(arrays, {
+    instanceWorld: {
+      numComponents: 16,
+      data: instanceWorlds,
+      divisor: 1,
+    },
+    instanceColor: {
+      numComponents: 3,
+      data: instanceColors,
+      divisor: 1,
+    },
+  });
+  const bufferInfo = twgl.createBufferInfoFromArrays(gl, arrays);
+  const vertexArrayInfo = twgl.createVertexArrayInfo(gl, programInfo, bufferInfo);
+
+  const uniforms = {
+    u_lightWorldPos: [1, 8, -30],
+    u_lightColor: [1, 1, 1, 1],
+    u_ambient: [0, 0, 0, 1],
+    u_specular: [1, 1, 1, 1],
+    u_shininess: 50,
+    u_specularFactor: 1,
+  };
+
+  function render(time) {
+    time *= 0.001;
+    twgl.resizeCanvasToDisplaySize(gl.canvas);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    const fov = 30 * Math.PI / 180;
+    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    const zNear = 0.5;
+    const zFar = 500;
+    const projection = m4.perspective(fov, aspect, zNear, zFar);
+    const radius = 25;
+    const speed = time * .1;
+    const eye = [Math.sin(speed) * radius, Math.sin(speed * .7) * 10, Math.cos(speed) * radius];
+    const target = [0, 0, 0];
+    const up = [0, 1, 0];
+
+    const camera = m4.lookAt(eye, target, up);
+    const view = m4.inverse(camera);
+    uniforms.u_viewProjection = m4.multiply(projection, view);
+    uniforms.u_viewInverse = camera;
+
+    gl.useProgram(programInfo.program);
+    twgl.setBuffersAndAttributes(gl, programInfo, vertexArrayInfo);
+    twgl.setUniforms(programInfo, uniforms);
+    twgl.drawBufferInfo(gl, vertexArrayInfo, gl.TRIANGLES, vertexArrayInfo.numElements, 0, numInstances);
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+}
+main11();
+  </script>
+  <script>
+'use strict';
+
+/* eslint no-alert: 0 */
+
+function main12() {
+  const m4 = twgl.m4;
+  function resizeCanvasToDisplaySize(canvas) {
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const needResize = width !== canvas.width || height !== canvas.height;
+    if (needResize) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    return needResize;
+  }
+
+  const updatePositionVS = `#version 300 es
+  in vec2 oldPosition;
+  in vec2 velocity;
+
+  uniform float deltaTime;
+  uniform vec2 canvasDimensions;
+
+  out vec2 newPosition;
+
+  vec2 euclideanModulo(vec2 n, vec2 m) {
+  	return mod(mod(n, m) + m, m);
+  }
+
+  void main() {
+    newPosition = euclideanModulo(
+        oldPosition + velocity * deltaTime,
+        canvasDimensions);
+  }
+  `;
+
+  const updatePositionFS = `#version 300 es
+  precision highp float;
+  void main() {
+  }
+  `;
+
+  const updateLinesVS = `#version 300 es
+  in vec4 position;
+  void main() {
+    gl_Position = position;
+  }
+  `;
+
+  const updateLinesFS = `#version 300 es
+  precision highp float;
+
+  uniform sampler2D linesTex;
+  uniform sampler2D velocityTex;
+  uniform vec2 canvasDimensions;
+  uniform float deltaTime;
+
+  out vec4 outColor;
+
+  vec2 euclideanModulo(vec2 n, vec2 m) {
+  	return mod(mod(n, m) + m, m);
+  }
+
+  void main() {
+    // compute texel coord from gl_FragCoord;
+    ivec2 texelCoord = ivec2(gl_FragCoord.xy);
+    
+    vec2 position = texelFetch(linesTex, texelCoord, 0).xy;
+    vec2 velocity = texelFetch(velocityTex, texelCoord, 0).xy;
+    vec2 newPosition = euclideanModulo(position + velocity * deltaTime, canvasDimensions);
+
+    outColor = vec4(newPosition, 0, 1);
+  }
+  `;
+
+  const closestLineVS = `#version 300 es
+  in vec3 point;
+
+  uniform sampler2D linesTex;
+  uniform int numLineSegments;
+
+  flat out int closestNdx;
+
+  vec4 getAs1D(sampler2D tex, ivec2 dimensions, int index) {
+    int y = index / dimensions.x;
+    int x = index % dimensions.x;
+    return texelFetch(tex, ivec2(x, y), 0);
+  }
+
+  // from https://stackoverflow.com/a/6853926/128511
+  // a is the point, b,c is the line segment
+  float distanceFromPointToLine(in vec3 a, in vec3 b, in vec3 c) {
+    vec3 ba = a - b;
+    vec3 bc = c - b;
+    float d = dot(ba, bc);
+    float len = length(bc);
+    float param = 0.0;
+    if (len != 0.0) {
+      param = clamp(d / (len * len), 0.0, 1.0);
+    }
+    vec3 r = b + bc * param;
+    return distance(a, r);
+  }
+
+  void main() {
+    ivec2 linesTexDimensions = textureSize(linesTex, 0);
+    
+    // find the closest line segment
+    float minDist = 10000000.0; 
+    int minIndex = -1;
+    for (int i = 0; i < numLineSegments; ++i) {
+      vec3 lineStart = getAs1D(linesTex, linesTexDimensions, i * 2).xyz;
+      vec3 lineEnd = getAs1D(linesTex, linesTexDimensions, i * 2 + 1).xyz;
+      float dist = distanceFromPointToLine(point, lineStart, lineEnd);
+      if (dist < minDist) {
+        minDist = dist;
+        minIndex = i;
+      }
+    }
+    
+    closestNdx = minIndex;
+  }
+  `;
+
+  const closestLineFS = `#version 300 es
+  precision highp float;
+  void main() {
+  }
+  `;
+
+  const drawClosestLinesVS = `#version 300 es
+  in int closestNdx;
+  uniform float numPoints;
+  uniform sampler2D linesTex;
+  uniform mat4 matrix;
+
+  out vec4 v_color;
+
+  vec4 getAs1D(sampler2D tex, ivec2 dimensions, int index) {
+    int y = index / dimensions.x;
+    int x = index % dimensions.x;
+    return texelFetch(tex, ivec2(x, y), 0);
+  }
+
+  vec3 hsv2rgb(vec3 c) {
+    c = vec3(c.x, clamp(c.yz, 0.0, 1.0));
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    ivec2 linesTexDimensions = textureSize(linesTex, 0);
+
+    // pull the position from the texture
+    int linePointId = closestNdx * 2 + gl_VertexID % 2;
+    vec4 position = getAs1D(linesTex, linesTexDimensions, linePointId);
+
+    // do the common matrix math
+    gl_Position = matrix * vec4(position.xy, 0, 1);
+
+    int pointId = gl_InstanceID;
+    float hue = float(pointId) / numPoints;
+    v_color = vec4(hsv2rgb(vec3(hue, 1, 1)), 1);
+  }
+  `;
+
+  const drawPointsVS = `#version 300 es
+  in vec4 point;
+
+  uniform float numPoints;
+  uniform mat4 matrix;
+
+  out vec4 v_color;
+
+  vec3 hsv2rgb(vec3 c) {
+    c = vec3(c.x, clamp(c.yz, 0.0, 1.0));
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    gl_Position = matrix * point;
+    gl_PointSize = 10.0;
+ 
+    float hue = float(gl_VertexID) / numPoints;
+    v_color = vec4(hsv2rgb(vec3(hue, 1, 1)), 1);
+  }
+  `;
+
+  const drawClosestLinesPointsFS = `#version 300 es
+  precision highp float;
+  in vec4 v_color;
+  out vec4 outColor;
+  void main() {
+    outColor = v_color;
+  }`;
+
+  const drawLinesVS = `#version 300 es
+  uniform sampler2D linesTex;
+  uniform mat4 matrix;
+
+  out vec4 v_color;
+
+  vec4 getAs1D(sampler2D tex, ivec2 dimensions, int index) {
+    int y = index / dimensions.x;
+    int x = index % dimensions.x;
+    return texelFetch(tex, ivec2(x, y), 0);
+  }
+
+  void main() {
+    ivec2 linesTexDimensions = textureSize(linesTex, 0);
+ 
+    // pull the position from the texture
+    vec4 position = getAs1D(linesTex, linesTexDimensions, gl_VertexID);
+
+    // do the common matrix math
+    gl_Position = matrix * vec4(position.xy, 0, 1);
+
+    // just so we can use the same fragment shader
+    v_color = vec4(0.8, 0.8, 0.8, 1);
+  }
+  `;
+
+  // Get A WebGL context
+  /** @type {HTMLCanvasElement} */
+  const canvas = document.querySelector("#c12");
+  const gl = canvas.getContext("webgl2");
+  if (!gl) {
+    return;
+  }
+  const ext = gl.getExtension('EXT_color_buffer_float');
+  if (!ext) {
+    alert('need EXT_color_buffer_float');
+    return;
+  }
+
+  function createShader(gl, type, src) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, src);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(shader));
+    }
+    return shader;
+  }
+
+  function createProgram(gl, shaderSources, transformFeedbackVaryings) {
+    const program = gl.createProgram();
+    [gl.VERTEX_SHADER, gl.FRAGMENT_SHADER].forEach((type, ndx) => {
+      const shader = createShader(gl, type, shaderSources[ndx]);
+      gl.attachShader(program, shader);
+    });
+    if (transformFeedbackVaryings) {
+      gl.transformFeedbackVaryings(
+          program,
+          transformFeedbackVaryings,
+          gl.SEPARATE_ATTRIBS,
+      );
+    }
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramParameter(program));
+    }
+    return program;
+  }
+
+  // we're going to base the initial positions on the size
+  // of the canvas so lets update the size of the canvas
+  // to the initial size we want
+  resizeCanvasToDisplaySize(gl.canvas);
+
+  function createPoints(numPoints, ranges) {
+    const points = [];
+    for (let i = 0; i < numPoints; ++i) {
+      points.push(...ranges.map(range => r(...range)));
+    }
+    return points;
+  }
+
+  const r = (min, max) => min + Math.random() * (max - min);
+
+  const points = createPoints(8, [[0, gl.canvas.width], [0, gl.canvas.height]]);
+  const lines = createPoints(125 * 2, [[0, gl.canvas.width], [0, gl.canvas.height]]);
+  const numPoints = points.length / 2;
+  const numLineSegments = lines.length / 2 / 2;
+
+  const pointVelocities = createPoints(numPoints, [[-20, 20], [-20, 20]]);
+  const lineVelocities = createPoints(numLineSegments * 2, [[-20, 20], [-20, 20]]);
+
+  function makeBuffer(gl, sizeOrData, usage) {
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, sizeOrData, usage);
+    return buf;
+  }
+
+  const closestNdxBuffer = makeBuffer(gl, points.length * 4, gl.STATIC_DRAW);
+  const pointsBuffer1 = makeBuffer(gl, new Float32Array(points), gl.DYNAMIC_DRAW);
+  const pointsBuffer2 = makeBuffer(gl, new Float32Array(points), gl.DYNAMIC_DRAW);
+  const pointVelocitiesBuffer = makeBuffer(gl, new Float32Array(pointVelocities), gl.STATIC_DRAW);
+  const quadBuffer = makeBuffer(gl, new Float32Array([
+    -1, -1,
+     1, -1,
+    -1,  1,
+    -1,  1,
+     1, -1,
+     1,  1,
+  ]), gl.STATIC_DRAW);
+
+  function createDataTexture(gl, data, numComponents, internalFormat, format, type) {
+    const numElements = data.length / numComponents;
+
+    // compute a size that will hold all of our data
+    const width = Math.ceil(Math.sqrt(numElements));
+    const height = Math.ceil(numElements / width);
+
+    const bin = new Float32Array(width * height * numComponents);
+    bin.set(data);
+
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,        // mip level
+        internalFormat,
+        width,
+        height,
+        0,        // border
+        format,
+        type,
+        bin,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return {tex, dimensions: [width, height]};
+  }
+
+  const {tex: linesTex1, dimensions: linesTexDimensions1} =
+      createDataTexture(gl, lines, 2, gl.RG32F, gl.RG, gl.FLOAT);
+  const {tex: linesTex2, dimensions: linesTexDimensions2} =
+      createDataTexture(gl, lines, 2, gl.RG32F, gl.RG, gl.FLOAT);
+  const {tex: lineVelocitiesTex, dimensions: lineVelocitiesTexDimensions} =
+      createDataTexture(gl, lineVelocities, 2, gl.RG32F, gl.RG, gl.FLOAT);
+
+  const updatePositionPrg = createProgram(
+      gl, [updatePositionVS, updatePositionFS], ['newPosition']);
+  const updateLinesPrg = createProgram(
+      gl, [updateLinesVS, updateLinesFS]);
+  const closestLinePrg = createProgram(
+      gl, [closestLineVS, closestLineFS], ['closestNdx']);
+  const drawLinesPrg = createProgram(
+      gl, [drawLinesVS, drawClosestLinesPointsFS]);
+  const drawClosestLinesPrg = createProgram(
+      gl, [drawClosestLinesVS, drawClosestLinesPointsFS]);
+  const drawPointsPrg = createProgram(
+      gl, [drawPointsVS, drawClosestLinesPointsFS]);
+
+  const updatePositionPrgLocs = {
+    oldPosition: gl.getAttribLocation(updatePositionPrg, 'oldPosition'),
+    velocity: gl.getAttribLocation(updatePositionPrg, 'velocity'),
+    canvasDimensions: gl.getUniformLocation(updatePositionPrg, 'canvasDimensions'),
+    deltaTime: gl.getUniformLocation(updatePositionPrg, 'deltaTime'),
+  };
+  const updateLinesPrgLocs = {
+    position: gl.getAttribLocation(updateLinesPrg, 'position'),
+    linesTex: gl.getUniformLocation(updateLinesPrg, 'linesTex'),
+    velocityTex: gl.getUniformLocation(updateLinesPrg, 'velocityTex'),
+    canvasDimensions: gl.getUniformLocation(updateLinesPrg, 'canvasDimensions'),
+    deltaTime: gl.getUniformLocation(updateLinesPrg, 'deltaTime'),
+  };
+  const closestLinePrgLocs = {
+    point: gl.getAttribLocation(closestLinePrg, 'point'),
+    linesTex: gl.getUniformLocation(closestLinePrg, 'linesTex'),
+    numLineSegments: gl.getUniformLocation(closestLinePrg, 'numLineSegments'),
+  };
+  const drawLinesPrgLocs = {
+    linesTex: gl.getUniformLocation(drawLinesPrg, 'linesTex'),
+    matrix: gl.getUniformLocation(drawLinesPrg, 'matrix'),
+  };
+  const drawClosestLinesPrgLocs = {
+    closestNdx: gl.getAttribLocation(drawClosestLinesPrg, 'closestNdx'),
+    linesTex: gl.getUniformLocation(drawClosestLinesPrg, 'linesTex'),
+    matrix: gl.getUniformLocation(drawClosestLinesPrg, 'matrix'),
+    numPoints: gl.getUniformLocation(drawClosestLinesPrg, 'numPoints'),
+  };
+  const drawPointsPrgLocs = {
+    point: gl.getAttribLocation(drawPointsPrg, 'point'),
+    matrix: gl.getUniformLocation(drawPointsPrg, 'matrix'),
+    numPoints: gl.getUniformLocation(drawPointsPrg, 'numPoints'),
+  };
+
+  function makeVertexArray(gl, bufLocPairs) {
+    const va = gl.createVertexArray();
+    gl.bindVertexArray(va);
+    for (const [buffer, loc] of bufLocPairs) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(
+          loc,      // attribute location
+          2,        // number of elements
+          gl.FLOAT, // type of data
+          false,    // normalize
+          0,        // stride (0 = auto)
+          0,        // offset
+      );
+    }
+    return va;
+  }
+
+  const updatePositionVA1 = makeVertexArray(gl, [
+    [pointsBuffer1, updatePositionPrgLocs.oldPosition],
+    [pointVelocitiesBuffer, updatePositionPrgLocs.velocity],
+  ]);
+  const updatePositionVA2 = makeVertexArray(gl, [
+    [pointsBuffer2, updatePositionPrgLocs.oldPosition],
+    [pointVelocitiesBuffer, updatePositionPrgLocs.velocity],
+  ]);
+
+  const updateLinesVA = makeVertexArray(gl, [
+    [quadBuffer, updateLinesPrgLocs.position],
+  ]);
+
+  const closestLinesVA1 = makeVertexArray(gl, [
+    [pointsBuffer1, closestLinePrgLocs.point],
+  ]);
+  const closestLinesVA2 = makeVertexArray(gl, [
+    [pointsBuffer2, closestLinePrgLocs.point],
+  ]);
+
+  const drawClosestLinesVA = gl.createVertexArray();
+  gl.bindVertexArray(drawClosestLinesVA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, closestNdxBuffer);
+  gl.enableVertexAttribArray(drawClosestLinesPrgLocs.closestNdx);
+  gl.vertexAttribIPointer(drawClosestLinesPrgLocs.closestNdx, 1, gl.INT, 0, 0);
+  gl.vertexAttribDivisor(drawClosestLinesPrgLocs.closestNdx, 1);
+
+  const drawPointsVA1 = makeVertexArray(gl, [
+    [pointsBuffer1, drawPointsPrgLocs.point],
+  ]);
+  const drawPointsVA2 = makeVertexArray(gl, [
+    [pointsBuffer2, drawPointsPrgLocs.point],
+  ]);
+
+
+  function makeTransformFeedback(gl, buffer) {
+    const tf = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, buffer);
+    return tf;
+  }
+
+  const pointsTF1 = makeTransformFeedback(gl, pointsBuffer1);
+  const pointsTF2 = makeTransformFeedback(gl, pointsBuffer2);
+
+  const closestNdxTF = makeTransformFeedback(gl, closestNdxBuffer);
+
+  function createFramebuffer(gl, tex) {
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return fb;
+  }
+
+  const linesFB1 = createFramebuffer(gl, linesTex1);
+  const linesFB2 = createFramebuffer(gl, linesTex2);
+
+  function drawArraysWithTransformFeedback(gl, tf, primitiveType, count) {
+    // turn of using the fragment shader
+    gl.enable(gl.RASTERIZER_DISCARD);
+
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+    gl.beginTransformFeedback(gl.POINTS);
+    gl.drawArrays(primitiveType, 0, count);
+    gl.endTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+
+    // turn on using fragment shaders again
+    gl.disable(gl.RASTERIZER_DISCARD);
+  }
+
+  let current = {
+    // for updating points
+    updatePositionVA: updatePositionVA1,  // read from points1
+    pointsTF: pointsTF2,                  // write to points2
+    // for updating line endings
+    linesTex: linesTex1,                  // read from linesTex1
+    linesFB: linesFB2,                    // write to linesTex2
+    // for computing closest lines
+    closestLinesVA: closestLinesVA2,      // read from points2
+    // for drawing all lines and closest lines
+    allLinesTex: linesTex2,               // read from linesTex2
+    // for drawing points
+    drawPointsVA: drawPointsVA2,          // read form points2
+  };
+
+  let next = {
+    // for updating points
+    updatePositionVA: updatePositionVA2,  // read from points2
+    pointsTF: pointsTF1,                  // write to points1
+    // for updating line endings
+    linesTex: linesTex2,                  // read from linesTex2
+    linesFB: linesFB1,                    // write to linesTex1
+    // for computing closest lines
+    closestLinesVA: closestLinesVA1,      // read from points1
+    // for drawing all lines and closest lines
+    allLinesTex: linesTex1,               // read from linesTex1
+    // for drawing points
+    drawPointsVA: drawPointsVA1,          // read form points1
+  };
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+
+  function updatePointPositions(deltaTime) {
+    gl.bindVertexArray(current.updatePositionVA);
+    gl.useProgram(updatePositionPrg);
+    gl.uniform1f(updatePositionPrgLocs.deltaTime, deltaTime);
+    gl.uniform2f(updatePositionPrgLocs.canvasDimensions, gl.canvas.width, gl.canvas.height);
+    drawArraysWithTransformFeedback(gl, current.pointsTF, gl.POINTS, numPoints);
+  }
+
+  function updateLineEndPoints(deltaTime) {
+    // Update the line endpoint positions ---------------------
+    gl.bindVertexArray(updateLinesVA); // just a quad
+    gl.useProgram(updateLinesPrg);
+
+    // bind texture to texture units 0 and 1
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, current.linesTex);
+    gl.activeTexture(gl.TEXTURE0 + 1);
+    gl.bindTexture(gl.TEXTURE_2D, lineVelocitiesTex);
+
+    // tell the shader to look at the textures on texture units 0 and 1
+    gl.uniform1i(updateLinesPrgLocs.linesTex, 0);
+    gl.uniform1i(updateLinesPrgLocs.velocityTex, 1);
+    gl.uniform1f(updateLinesPrgLocs.deltaTime, deltaTime);
+    gl.uniform2f(updateLinesPrgLocs.canvasDimensions, gl.canvas.width, gl.canvas.height);
+
+    // write to the other lines texture
+    gl.bindFramebuffer(gl.FRAMEBUFFER, current.linesFB);
+    gl.viewport(0, 0, ...lineVelocitiesTexDimensions);
+
+    // drawing a clip space -1 to +1 quad = map over entire destination array
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  function computeClosestLines() {
+    gl.bindVertexArray(current.closestLinesVA);
+    gl.useProgram(closestLinePrg);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, current.linesTex);
+
+    gl.uniform1i(closestLinePrgLocs.linesTex, 0);
+    gl.uniform1i(closestLinePrgLocs.numLineSegments, numLineSegments);
+
+    drawArraysWithTransformFeedback(gl, closestNdxTF, gl.POINTS, numPoints);
+  }
+
+  function drawAllLines(matrix) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.bindVertexArray(null);
+    gl.useProgram(drawLinesPrg);
+
+    // bind the lines texture to texture unit 0
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, current.allLinesTex);
+
+    // Tell the shader to use texture on texture unit 0
+    gl.uniform1i(drawLinesPrgLocs.linesTex, 0);
+    gl.uniformMatrix4fv(drawLinesPrgLocs.matrix, false, matrix);
+
+    gl.drawArrays(gl.LINES, 0, numLineSegments * 2);
+  }
+
+  function drawClosestLines(matrix) {
+    gl.bindVertexArray(drawClosestLinesVA);
+    gl.useProgram(drawClosestLinesPrg);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, current.allLinesTex);
+
+    gl.uniform1i(drawClosestLinesPrgLocs.linesTex, 0);
+    gl.uniform1f(drawClosestLinesPrgLocs.numPoints, numPoints);
+    gl.uniformMatrix4fv(drawClosestLinesPrgLocs.matrix, false, matrix);
+
+    gl.drawArraysInstanced(gl.LINES, 0, 2, numPoints);
+  }
+
+  function drawPoints(matrix) {
+    gl.bindVertexArray(current.drawPointsVA);
+    gl.useProgram(drawPointsPrg);
+
+    gl.uniform1f(drawPointsPrgLocs.numPoints, numPoints);
+    gl.uniformMatrix4fv(drawPointsPrgLocs.matrix, false, matrix);
+
+    gl.drawArrays(gl.POINTS, 0, numPoints);
+  }
+
+  let then = 0;
+  function render(time) {
+    // convert to seconds
+    time *= 0.001;
+    // Subtract the previous time from the current time
+    const deltaTime = time - then;
+    // Remember the current time for the next frame.
+    then = time;
+
+    resizeCanvasToDisplaySize(gl.canvas);
+
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    updatePointPositions(deltaTime);
+    updateLineEndPoints(deltaTime);
+    computeClosestLines();
+
+    const matrix = m4.ortho(0, gl.canvas.width, 0, gl.canvas.height, -1, 1);
+
+    drawAllLines(matrix);
+    drawClosestLines(matrix);
+    drawPoints(matrix);
+
+    // swap
+    {
+      const temp = current;
+      current = next;
+      next = temp;
+    }
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+}
+main12();
+
+  </script>
+</html>
+

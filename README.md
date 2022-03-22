@@ -3,7 +3,7 @@
 Virtualizes a single WebGL context into multiple contexts
 
 [A demo of some WebGL apps running with only 1 shared WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
-and using `alpha: false`, `premultipledAlpha: false`, `preserveDrawingBuffer: true` and some other things.
+and using `alpha: false`, `premultipliedAlpha: false`, `preserveDrawingBuffer: true` and some other things. [A similar demo for WebGL2](https://greggman.github.io/virtual-webgl/example/example2.html).
 
 [A demo of creating and disposing of webgl contexts](https://greggman.github.io/virtual-webgl/example/dispose.html).
 WebGL implementations often delete the oldest context when too many are created. Using virtual-webgl you can
@@ -24,7 +24,7 @@ I don't actually recommend this at all. If you're in control of your code then t
 much better solutions [like this for raw webgl](http://twgljs.org/examples/itemlist.html)
 and [this for three.js](https://threejs.org/examples/webgl_multiple_elements.html) (both if which I wrote BTW &#x1F61B;)
 
-I mostly wrote this for a fun short techincal challenge. I have no plans to acutally use it
+I mostly wrote this for a fun short technical challenge. I have no plans to actually use it
 or maintain it. If you find a problem feel free to file an issue but I can't promise I
 can spend anytime addressing it. Pull requests are more welcome or just fork it.
 
@@ -65,6 +65,12 @@ Include it on your page before other scripts
 <script src="virtual-webgl.js"></script>
 ```
 
+or for WebGL2 use
+
+```
+<script src="virtual-webgl2.js"></script>
+```
+
 ## Writing your own compositor
 
 A full solution would probably require some other method but ... If you look in
@@ -73,7 +79,7 @@ you'll see code that (a) disables WebGL2 so that Unity falls
 back to WebGL1 (since this virtual-webgl currently only supports WebGL1), and (b) creates a custom
 compositor that draws a different result than the default compositor.
 
-The idea for the `createCompostor` function is that you probably need different compositors
+The idea for the `createCompositor` function is that you probably need different compositors
 for each canvas on the page so it's up to you how to do that. Either check the `canvas` passed
 in and it's ID or keep a count of compositors created and do different things for different ones
 or whatever. If you return nothing/undefined the default compositor will be created for that canvas.
@@ -88,11 +94,10 @@ to give your custom compositor a chance to clean up.
 
 ## Limits and Issues
 
-* Only WebGL1 is supported at the moment
-
-  WebGL2 gets harder likely because of issues with queries, sync objects, and various issues related to PBUFFERS
-  and transform feedback. If you ignore those issues then it would be relatively easy. Handling those issues
-  is probably much more work.
+* In WebGL2 you must end queries and transformFeedback before exiting
+  the current event. The good things is, AFAIK, pretty much all WebGL
+  apps already do this so it should't be a problem but not finishing
+  those is not technically against the spec.
 
 * There are no checks for errors.
 
@@ -121,11 +126,10 @@ to give your custom compositor a chance to clean up.
 
 ## Perf
 
-Saving and restoring all the state is probably pretty dang slow. I tried rendering
-a bunch of 300x150 canvases with a single cube and it can't do 60fps with just a few
-canvases. I even made it ony render the first canvas, no compositing for the others
-and it still couldn't keep perf meaning it's slow and you should use another solution
-if possible.
+You can see the demos linked above probably run at a reasonable rate for a few
+canvases so if you have 2 or 3 things (like the mapbox example or the unity example)
+Then it's probably ok. For putting lots of canvases on the page though you'd
+be better off using one of the solutions mentioned above.
 
 There are certain low-hanging optimizations. For example you could track the highest used attribute and
 highest used texture unit across contexts and only save and restore up to that highest
@@ -133,12 +137,12 @@ attribute and texture unit since most apps don't use all of them. If your app us
 disappears.
 
 The other big perf issue is you can't render directly to different canvases so I have
-to make each of the canvases use a `Canvas2DRendernigContext` and call `drawImage`.
+to make each of the canvases use a `Canvas2DRenderingContext` and call `drawImage`.
 
 That could be solved maybe with `OffscreenCanvas` and `ImageBitmapRenderingContext`
 but those features haven't shipped without a flag as of 2018-06-05.
 
-It could also be solved using the techiques used in [this sample](http://twgljs.org/examples/itemlist.html)
+It could also be solved using the techniques used in [this sample](http://twgljs.org/examples/itemlist.html)
 
 Basically put the canvas of the shared GL context full window size in the background and instead
 of compositing by copying to a 2D canvas, composite by setting the viewport/scissor and render to
@@ -146,29 +150,27 @@ the shared GL context's canvas. The limitation of course is that the result won'
 of other elements but usually that's ok.
 
 That should be trivial to implement using a custom compositor. The first time you get a compositor
-put the canvas of the shared context (the one that gets passed to `compsite`) in the page and then
+put the canvas of the shared context (the one that gets passed to `composite`) in the page and then
 render the texture being composited using `gl.viewport` and `gl.scissor`
 
 If your canvases are not all on screen you could try using [an augmented requestAnimationFrame](https://github.com/greggman/requestanimationframe-fix.js)
 that only calls the requestAnimationFrame callback to draw the canvases that are on screen.
-
-All those optimizaton don't add up to much given the test mentioned in the first paragraph.
 
 Another solution is to track all the state internally rather than querying it from WebGL. There's a lot
 of state to track. You'd track it, and then ideally only lazily restore it if possible.
 
 ## Future Enhancements
 
-virutal-webgl adds a `dispose` method to the virtual contexts letting you free the virutal context.
+virtual-webgl adds a `dispose` method to the virtual contexts letting you free the virtual context.
 As it is it leaves it up to the app to free all of its own GPU resources. `dispose` only disposes of
 internal resources.
 
 It probably would not be that hard to track resources by context and free them on dispose. It's not
-100% clear that's the right thing to do always. For example since virutal-webgl lets you share
-resources across contexts it would be a perfectly valid usecase to create a temporary context just to create some
+100% clear that's the right thing to do always. For example since virtual-webgl lets you share
+resources across contexts it would be a perfectly valid use-case to create a temporary context just to create some
 resources and the dispose of that context but keep the created resources around.
 
-It's perfectly resonable to do this yourself 100% outside virual-webgl. You just *either* augment the context.
+It's perfectly reasonable to do this yourself 100% outside virtual-webgl. You just *either* augment the context.
 
 Example
 
@@ -195,7 +197,7 @@ Example
       }
     }(gl.dispose);
 
-You'd need to do the same for textures, renderbuffers, framebuffers, vaos, programs, shaders
+You'd need to do the same for textures, renderbuffers, framebuffers, VAOs, programs, shaders
 
 Or you just make helper functions and make your app call those functions that does the same tracking
 instead of calling functions directly on the context. In other words.
