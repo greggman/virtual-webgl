@@ -272,11 +272,14 @@
       transformFeedbackBuffer: null,
       uniformBuffer: null,
  
+      readBuffer: null,
+
       blend: false,
       cullFace: false,
       depthTest: false,
       dither: false,
       polygonOffsetFill: false,
+      rasterDiscard: false,
       sampleAlphaToCoverage: false,
       sampleCoverage: false,
       scissorTest: false,
@@ -668,6 +671,8 @@
       ub.size = gl.getIndexedParameter(gl.UNIFORM_BUFFER_SIZE, i);
       ub.start = gl.getIndexedParameter(gl.UNIFORM_BUFFER_START, i);
     }
+
+    state.readBuffer = gl.getParameter(gl.READ_BUFFER);
  
     // save attributes
     state.vertexArray = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
@@ -678,6 +683,7 @@
     state.depthTest = gl.getParameter(gl.DEPTH_TEST);
     state.dither = gl.getParameter(gl.DITHER);
     state.polygonOffsetFill = gl.getParameter(gl.POLYGON_OFFSET_FILL);
+    state.rasterDiscard = gl.getParameter(gl.RASTERIZER_DISCARD);
     state.sampleAlphaToCoverage = gl.getParameter(gl.SAMPLE_ALPHA_TO_COVERAGE);
     state.sampleCoverage = gl.getParameter(gl.SAMPLE_COVERAGE);
     state.scissorTest = gl.getParameter(gl.SCISSOR_TEST);
@@ -780,15 +786,19 @@
       }
     }
 
+    gl.readBuffer(state.readBuffer);
+
     enableDisable(gl, gl.BLEND, state.blend);
     enableDisable(gl, gl.CULL_FACE, state.cullFace);
     enableDisable(gl, gl.DEPTH_TEST, state.depthTest);
     enableDisable(gl, gl.DITHER, state.dither);
     enableDisable(gl, gl.POLYGON_OFFSET_FILL, state.polygonOffsetFill);
+    enableDisable(gl, gl.RASTERIZER_DISCARD, state.rasterDiscard);
     enableDisable(gl, gl.SAMPLE_ALPHA_TO_COVERAGE, state.sampleAlphaToCoverage);
     enableDisable(gl, gl.SAMPLE_COVERAGE, state.sampleCoverage);
     enableDisable(gl, gl.SCISSOR_TEST, state.scissorTest);
     enableDisable(gl, gl.STENCIL_TEST, state.stencilTest);
+
 
     gl.pixelStorei(gl.PACK_ALIGNMENT, state.packAlignment);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, state.unpackAlignment);

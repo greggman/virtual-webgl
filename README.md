@@ -99,6 +99,16 @@ to give your custom compositor a chance to clean up.
   apps already do this so it should't be a problem but not finishing
   those is not technically against the spec.
 
+* You can't mix WebGL1 and WebGL2
+
+  WebGL1 and WebGL2 have a few incompatibilities meaning that emulating
+  WebGL1 on top of WebGL2 is more work. It might not be that much work.
+  I have not bothered to think about it. Off the top of my head you'd
+  have to emulate all the various WebGL1 only extensions like
+  OES_vertex_array_object, WEBGL_draw_buffers, different floating
+  point texture support, differences in how depth-stencil renderbuffers
+  work, and maybe a few other things.
+
 * There are no checks for errors.
 
   WebGL (and OpenGL) use a asynchronous command buffer error system
@@ -133,7 +143,7 @@ be better off using one of the solutions mentioned above.
 
 There are certain low-hanging optimizations. For example you could track the highest used attribute and
 highest used texture unit across contexts and only save and restore up to that highest
-attribute and texture unit since most apps don't use all of them. If your app use VAOs that issue
+attribute and texture unit since most apps don't use all of them. If your app uses VAOs that issue
 disappears.
 
 The other big perf issue is you can't render directly to different canvases so I have
