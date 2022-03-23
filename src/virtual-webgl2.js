@@ -32,6 +32,7 @@
  */
 (function() {
   const settings = {
+    disableWebGL1: false,
     compositorCreator() {
     },
   };
@@ -103,9 +104,9 @@
 
   HTMLCanvasElement.prototype.getContext = (function(origFn) {
     return function(type, contextAttributes) {
-      if (type === 'webgl' || type === 'experimental-webgl') {
+      if ((type === 'webgl' || type === 'experimental-webgl') && settings.disableWebGL1) {
         return null;
-      } else if (type === 'webgl2' && settings.disableWebGL2) {
+      } else if (type === 'webgl2') {
         return createOrGetVirtualWebGLContext(this, type, contextAttributes);
       }
       return origFn.call(this, type, contextAttributes);
@@ -161,10 +162,14 @@
     }
   }
 
-  class VirtualWebGLContext {
+  // This exists so VirtualWebGLContext has a base class we can replace
+  // because otherwise it's base is Object which we can't replace.
+  class Base {};
+  class VirtualWebGLContext extends Base {
     constructor(canvas, contextAttributes = {}, compositor, disposeHelper) {
+      super();
       const gl = sharedWebGLContext;
-      this.canvas = canvas;
+      this._canvas = canvas;
       // Should use Symbols or something to hide these variables from the outside.
 
       this._compositor = compositor;
@@ -213,7 +218,7 @@
       // remember all WebGL state (default bindings, default texture units,
       // default attributes and/or vertex shade object, default program,
       // default blend, stencil, zBuffer, culling, viewport etc... state
-      this._state = makeDefaultState(canvas.width, canvas.height);
+      this._state = makeDefaultState(gl, canvas.width, canvas.height);
       this._state.readFramebuffer = this._drawingbufferFramebuffer;
       this._state.drawFramebuffer = this._drawingbufferFramebuffer;
 
@@ -242,6 +247,9 @@
         }
       }
     }
+    get canvas() {
+      return this._canvas;
+    }
     get drawingBufferWidth() {
       return this.canvas.width;
     }
@@ -255,6 +263,10 @@
       }
     }
   }
+
+  // Replace the prototype with WebGL2RenderingContext so that someCtx instanceof WebGL2RenderingContext works
+  Object.setPrototypeOf(Object.getPrototypeOf(VirtualWebGLContext.prototype), WebGL2RenderingContext.prototype);
+
 
   function makeDefaultState(gl, width, height) {
     const vao = gl.createVertexArray();
@@ -356,53 +368,6 @@
     return state;
   }
 
-  // copy all WebGL constants and functions to the prototype of
-  // VirtualWebGLContext
-  for (let key in WebGLRenderingContext.prototype) {
-    switch (key) {
-      case 'canvas':
-      case 'drawingBufferWidth':
-      case 'drawingBufferHeight':
-        break;
-      default: {
-        const value = WebGLRenderingContext.prototype[key];
-        let newValue = value;
-        switch (key) {
-          case 'getContextAttributes':
-            newValue = virtualGetContextAttributes;
-            break;
-          case 'getExtension':
-            newValue = createGetExtensionWrapper(value);
-            break;
-          case 'bindFramebuffer':
-            newValue = virtualBindFramebuffer;
-            break;
-          case 'getParameter':
-            newValue = virtualGetParameter;
-            break;
-          case 'readPixels':
-            newValue = virtualReadPixels;
-            break;
-          case 'clear':
-          case 'drawArrays':
-          case 'drawElements':
-          case 'drawArraysInstanced':
-          case 'drawElementsInstanced':
-          case 'drawRangeElements':
-            newValue = createDrawWrapper(value);
-            break;
-          default:
-            if (typeof value === 'function') {
-              newValue = createWrapper(value);
-            }
-            break;
-         }
-         VirtualWebGLContext.prototype[key] = newValue;
-         break;
-      }
-    }
-  }
-
   function createGetExtensionWrapper(origFn) {
     return function(name) {
       // just like the real context each extension needs a virtual class because each use
@@ -441,7 +406,7 @@
   }
 
   function isFramebufferBindingNull(vCtx) {
-    return vCtx._state.framebuffer === vCtx._drawingbufferFramebuffer;
+    return vCtx._state.drawFramebuffer === vCtx._drawingbufferFramebuffer;
   }
 
   function virtualGetContextAttributes() {
@@ -506,7 +471,31 @@
     }
   }
 
-  function createWrapper(origFn) {
+  const virtualDrawBuffers = (function() {
+    const gl = sharedWebGLContext;
+    const backBuffer = [gl.COLOR_ATTACHMENT0];
+
+    return function(drawingBuffers) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      // if the virtual context is bound to canvas then fake it
+      if (isFramebufferBindingNull(this)) {
+        // this really isn't checking everything
+        // for example if the user passed in array.length != 1
+        // then we are supposed to generate an error
+        if (drawingBuffers[0] === gl.BACK) {
+          drawingBuffers = backBuffer;
+        }
+      }
+
+      gl.drawBuffers(drawingBuffers);
+      if (gl.getError()) {
+        debugger;
+      }
+    };
+  }());
+
+  function createWrapper(origFn, name) {
     // lots of optimization could happen here depending on specific functions
     return function(...args) {
       makeCurrentContext(this);
@@ -523,7 +512,7 @@
       gl.disable(gl.SCISSOR_TEST);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
       enableDisable(gl, gl.SCISSOR_TEST, vCtx._state.scissorTest);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, vCtx._state.framebuffer);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, vCtx._state.drawFramebuffer);
     }
   }
 
@@ -552,6 +541,56 @@
       afterDraw(this);
       return result;
     };
+  }
+
+  // copy all WebGL constants and functions to the prototype of
+  // VirtualWebGLContext
+  for (let key in WebGL2RenderingContext.prototype) {
+    switch (key) {
+      case 'canvas':
+      case 'drawingBufferWidth':
+      case 'drawingBufferHeight':
+        break;
+      default: {
+        const value = WebGL2RenderingContext.prototype[key];
+        let newValue = value;
+        switch (key) {
+          case 'getContextAttributes':
+            newValue = virtualGetContextAttributes;
+            break;
+          case 'getExtension':
+            newValue = createGetExtensionWrapper(value);
+            break;
+          case 'bindFramebuffer':
+            newValue = virtualBindFramebuffer;
+            break;
+          case 'getParameter':
+            newValue = virtualGetParameter;
+            break;
+          case 'readPixels':
+            newValue = virtualReadPixels;
+            break;
+          case 'clear':
+          case 'drawArrays':
+          case 'drawElements':
+          case 'drawArraysInstanced':
+          case 'drawElementsInstanced':
+          case 'drawRangeElements':
+            newValue = createDrawWrapper(value);
+            break;
+          case 'drawBuffers':
+            newValue = virtualDrawBuffers;
+            break;
+          default:
+            if (typeof value === 'function') {
+              newValue = createWrapper(value, key);
+            }
+            break;
+         }
+         VirtualWebGLContext.prototype[key] = newValue;
+         break;
+      }
+    }
   }
 
   function makeCurrentContext(vCtx) {
