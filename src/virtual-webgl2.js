@@ -30,6 +30,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-env browser */
+
 (function() {
   const settings = {
     disableWebGL1: false,
@@ -102,7 +104,7 @@
 
   saveAllState(baseState);
 
-  HTMLCanvasElement.prototype.getContext = (function(origFn) {
+    HTMLCanvasElement.prototype.getContext = (function(origFn) {
     return function(type, contextAttributes) {
       if ((type === 'webgl' || type === 'experimental-webgl') && settings.disableWebGL1) {
         return null;
@@ -162,9 +164,9 @@
     }
   }
 
-  // This exists so VirtualWebGLContext has a base class we can replace
+  // Base exists so VirtualWebGLContext has a base class we can replace
   // because otherwise it's base is Object which we can't replace.
-  class Base {};
+  class Base {}
   class VirtualWebGLContext extends Base {
     constructor(canvas, contextAttributes = {}, compositor, disposeHelper) {
       super();
@@ -221,6 +223,7 @@
       this._state = makeDefaultState(gl, canvas.width, canvas.height);
       this._state.readFramebuffer = this._drawingbufferFramebuffer;
       this._state.drawFramebuffer = this._drawingbufferFramebuffer;
+      this._state.readBuffer = gl.COLOR_ATTACHMENT0;
 
       this._state.vertexArray = gl.createVertexArray();
       this._defaultVertexArray = this._state.vertexArray;
@@ -264,15 +267,14 @@
     }
   }
 
-  // Replace the prototype with WebGL2RenderingContext so that someCtx instanceof WebGL2RenderingContext works
+  // Replace the prototype with WebGL2RenderingContext so that someCtx instanceof WebGL2RenderingContext returns true
   Object.setPrototypeOf(Object.getPrototypeOf(VirtualWebGLContext.prototype), WebGL2RenderingContext.prototype);
-
 
   function makeDefaultState(gl, width, height) {
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
 
-    const state ={
+    const state = {
       arrayBuffer: null,
       renderbuffer: null,
       drawFramebuffer: null,
@@ -283,33 +285,46 @@
       pixelUnpackBuffer: null,
       transformFeedbackBuffer: null,
       uniformBuffer: null,
- 
-      readBuffer: null,
 
-      blend: false,
-      cullFace: false,
-      depthTest: false,
-      dither: false,
-      polygonOffsetFill: false,
-      rasterDiscard: false,
-      sampleAlphaToCoverage: false,
-      sampleCoverage: false,
-      scissorTest: false,
-      stencilTest: false,
+      readBuffer: gl.BACK,
+
+      enable: new Map([
+        [ gl.BLEND, false ],
+        [ gl.CULL_FACE, false ],
+        [ gl.DEPTH_TEST, false ],
+        [ gl.DITHER, false ],
+        [ gl.POLYGON_OFFSET_FILL, false ],
+        [ gl.RASTERIZER_DISCARD, false ],
+        [ gl.SAMPLE_ALPHA_TO_COVERAGE, false ],
+        [ gl.SAMPLE_COVERAGE, false ],
+        [ gl.SCISSOR_TEST, false ],
+        [ gl.STENCIL_TEST, false ],
+      ]),
+
 
       vertexArray: vao,
       activeTexture: gl.TEXTURE0,
       transformFeedback: null,
 
-      packAlignment: 4,
-      unpackAlignment: 4,
-      unpackColorspaceConversion: gl.BROWSER_DEFAULT_WEBGL,
-      unpackFlipY: 0,
-      unpackPremultiplyAlpha: 0,
+      pack: new Map([
+        [ gl.PACK_ALIGNMENT, 4],
+        [ gl.UNPACK_ALIGNMENT, 4],
+        [ gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL],
+        [ gl.UNPACK_FLIP_Y_WEBGL, 0],
+        [ gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0],
+        [ gl.UNPACK_ROW_LENGTH   , 0],
+        [ gl.UNPACK_SKIP_ROWS    , 0],
+        [ gl.UNPACK_SKIP_PIXELS  , 0],
+        [ gl.UNPACK_SKIP_IMAGES  , 0],
+        [ gl.UNPACK_IMAGE_HEIGHT , 0],
+        [ gl.PACK_ROW_LENGTH     , 0],
+        [ gl.PACK_SKIP_ROWS      , 0],
+        [ gl.PACK_SKIP_PIXELS    , 0],
+      ]),
 
       currentProgram: null,
       viewport: [0, 0, width, height],
-      scissor: [0, 0, 0, 0],
+      scissor: [0, 0, width, height],
       blendSrcRgb: gl.ONE,
       blendDstRgb: gl.ZERO,
       blendSrcAlpha: gl.ONE,
@@ -317,10 +332,10 @@
       blendEquationRgb: gl.FUNC_ADD,
       blendEquationAlpha: gl.FUNC_ADD,
       blendColor: [0, 0, 0, 0],
-      colorClearValue: [0, 0, 0, 0],
+      clearColor: [0, 0, 0, 0],
       colorMask: [true, true, true, true],
       cullFaceMode: gl.BACK,
-      depthClearValue: 1,
+      clearDepth: 1,
       depthFunc: gl.LESS,
       depthRange: [0, 1],
       depthMask: true,
@@ -331,23 +346,27 @@
       polygonOffsetUnits: 0,
       sampleCoverageValue: 1,
       sampleCoverageUnits: false,
-      stencilBackFail: gl.KEEP,
-      stencilBackFunc: gl.ALWAYS,
-      stencilBackPassDepthFail: gl.KEEP,
-      stencilBackPassDepthPass: gl.KEEP,
-      stencilBackRef: 0,
-      stencilBackValueMask: 0xFFFFFFFF,
-      stencilBackWriteMask: 0xFFFFFFFF,
+      stencilFront: {
+        fail: gl.KEEP,
+        func: gl.ALWAYS,
+        depthFail: gl.KEEP,
+        depthPass: gl.KEEP,
+        ref: 0,
+        valueMask: 0xFFFFFFFF,
+        writeMask: 0xFFFFFFFF,
+      },
+      stencilBack: {
+        fail: gl.KEEP,
+        func: gl.ALWAYS,
+        depthFail: gl.KEEP,
+        depthPass: gl.KEEP,
+        ref: 0,
+        valueMask: 0xFFFFFFFF,
+        writeMask: 0xFFFFFFFF,
+      },
       stencilClearValue: 0,
-      stencilFail: gl.KEEP,
-      stencilFunc: gl.ALWAYS,
-      stencilPassDepthFail: gl.KEEP,
-      stencilPassDepthPass: gl.KEEP,
-      stencilRef: 0,
-      stencilValueMask: 0xFFFFFFFF,
-      stencilWriteMask: 0xFFFFFFFF,
 
-      textureUnits: new Array(numTextureUnits).fill(0).map(_ => {
+      textureUnits: new Array(numTextureUnits).fill(0).map(() => {
         return {
           texture2D: null,
           textureCubemap: null,
@@ -356,7 +375,7 @@
         };
       }),
       samplerUnits: new Array(numTextureUnits).fill(null),
-      uniformBufferBindings: new Array(numUniformBufferBindings).fill(0).map(_ => {
+      uniformBufferBindings: new Array(numUniformBufferBindings).fill(0).map(() => {
         return {
           buffer: null,
           size: 0,
@@ -379,7 +398,9 @@
 
       const ext = origFn.call(sharedWebGLContext, name);
       const wrapperInfo = extensionInfo[name] || {};
-      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn || (() => { console.log("trying to get extension:", name); });
+      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn || (() => {
+        console.log('trying to get extension:', name);
+      });
       const saveRestoreHelper = extensionSaveRestoreHelpers[name];
       if (!saveRestoreHelper) {
         const saveRestoreMakerFn = wrapperInfo.saveRestoreMakerFn;
@@ -393,7 +414,7 @@
       const wrapper = {
         _context: this,
       };
-      for (let key in ext) {
+      for (const key in ext) {
         let value = ext[key];
         if (typeof value === 'function') {
           value = wrapperFnMakerFn(ext, value, name);
@@ -409,93 +430,7 @@
     return vCtx._state.drawFramebuffer === vCtx._drawingbufferFramebuffer;
   }
 
-  function virtualGetContextAttributes() {
-    return this._contextAttributes;
-  }
-
-  function virtualReadPixels(...args) {
-    makeCurrentContext(this);
-    resizeCanvasIfChanged(this);
-    clearIfNeeded(this);
-    const gl = sharedWebGLContext;
-    return gl.readPixels(...args);
-  }
-
-  function virtualGetParameter(pname) {
-    makeCurrentContext(this);
-    resizeCanvasIfChanged(this);
-    const gl = sharedWebGLContext;
-    const value = gl.getParameter(pname);
-    switch (pname) {
-      case gl.FRAMEBUFFER_BINDING:
-        if (value === this._drawingbufferFramebuffer) {
-          return null;
-        }
-        break;
-      case gl.DRAW_BUFFER0:
-        if (isFramebufferBindingNull(this)) {
-          if (value === gl.COLOR_ATTACHMENT0) {
-            return gl.BACK;
-          }
-        }
-        break;
-      case gl.VERTEX_ARRAY_BINDING:
-        if (value === this._defaultVertexArray) {
-          return null;
-        }
-        break;
-    }
-    return value;
-  }
-
-  function virtualBindFramebuffer(bindPoint, framebuffer) {
-    makeCurrentContext(this);
-    resizeCanvasIfChanged(this);
-    const gl = sharedWebGLContext;
-    if (framebuffer === null) {
-      // bind our drawingBuffer
-      framebuffer = this._drawingbufferFramebuffer;
-    }
-    gl.bindFramebuffer(bindPoint, framebuffer);
-    switch (bindPoint) {
-      case gl.FRAMEBUFFER:
-        this._state.readFramebuffer = framebuffer;
-        this._state.drawFramebuffer = framebuffer;
-        break;
-      case gl.DRAW_FRAMEBUFFER:
-        this._state.drawFramebuffer = framebuffer;
-        break;
-      case gl.READ_FRAMEBUFFER:
-        this._state.readFramebuffer = framebuffer;
-        break;
-    }
-  }
-
-  const virtualDrawBuffers = (function() {
-    const gl = sharedWebGLContext;
-    const backBuffer = [gl.COLOR_ATTACHMENT0];
-
-    return function(drawingBuffers) {
-      makeCurrentContext(this);
-      resizeCanvasIfChanged(this);
-      // if the virtual context is bound to canvas then fake it
-      if (isFramebufferBindingNull(this)) {
-        // this really isn't checking everything
-        // for example if the user passed in array.length != 1
-        // then we are supposed to generate an error
-        if (drawingBuffers[0] === gl.BACK) {
-          drawingBuffers = backBuffer;
-        }
-      }
-
-      gl.drawBuffers(drawingBuffers);
-      if (gl.getError()) {
-        debugger;
-      }
-    };
-  }());
-
-  function createWrapper(origFn, name) {
+  function createWrapper(origFn/*, name*/) {
     // lots of optimization could happen here depending on specific functions
     return function(...args) {
       makeCurrentContext(this);
@@ -543,9 +478,401 @@
     };
   }
 
+  function createStateArgsSaverFn(fnName) {
+    return function(...args) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl[fnName](...args);
+      const v = this._state[fnName];
+      for (let i = 0; i < args.length; ++i) {
+        v[i] = args[i];
+      }
+    };
+  }
+
+  function createSaveStateNamedArgs(fnName, argsToStateProps) {
+    return function(...args) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl[fnName](...args);
+      for (let i = 0; i < argsToStateProps.length; ++i) {
+        this._state[argsToStateProps[i]] = args[i];
+      }
+    };
+  }
+
+  function saveStencilMaskImpl(st, mask) {
+    st.writeMask = mask;
+  }
+
+  function saveStencilMask(state, face, mask) {
+    if (face === sharedWebGLContext.FRONT || face === sharedWebGLContext.FRONT_AND_BACK) {
+      saveStencilMaskImpl(state.stencilFront, mask);
+    }
+    if (face === sharedWebGLContext.BACK || face === sharedWebGLContext.FRONT_AND_BACK) {
+      saveStencilMaskImpl(state.stencilBack, mask);
+    }
+  }
+
+  function saveStencilFuncImpl(st, func, ref, mask) {
+    st.func = func;
+    st.ref = ref;
+    st.valueMask = mask;
+  }
+
+  function saveStencilFunc(state, face, func, ref, mask) {
+    if (face === sharedWebGLContext.FRONT || face === sharedWebGLContext.FRONT_AND_BACK) {
+      saveStencilFuncImpl(state.stencilFront, func, ref, mask);
+    }
+    if (face === sharedWebGLContext.BACK || face === sharedWebGLContext.FRONT_AND_BACK) {
+      saveStencilFuncImpl(state.stencilBack, func, ref, mask);
+    }
+  }
+
+  function saveStencilOpImpl(st, fail, zfail, zpass) {
+    st.fail = fail;
+    st.depthFail = zfail;
+    st.depthPass = zpass;
+  }
+
+  function saveStencilOp(state, face, fail, zfail, zpass) {
+    if (face === sharedWebGLContext.FRONT || face === sharedWebGLContext.FRONT_AND_BACK) {
+      saveStencilOpImpl(state.stencilFront, fail, zfail, zpass);
+    }
+    if (face === sharedWebGLContext.BACK || face === sharedWebGLContext.FRONT_AND_BACK) {
+      saveStencilOpImpl(state.stencilBack, fail, zfail, zpass);
+    }
+  }
+
+  const virtualFns = {
+    activeTexture(unit) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.activeTexture(unit);
+      this._state.activeTexture = unit;
+    },
+    enable(pname) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.enable(pname);
+      this._state.enable.set(pname, true);
+    },
+    disable(pname) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.disable(pname);
+      this._state.enable.set(pname, false);
+    },
+    viewport: createStateArgsSaverFn('viewport'),
+    scissor: createStateArgsSaverFn('scissor'),
+    blendColor: createStateArgsSaverFn('blendColor'),
+    clearColor: createStateArgsSaverFn('clearColor'),
+    colorMask: createStateArgsSaverFn('colorMask'),
+    depthRange: createStateArgsSaverFn('depthRange'),
+    bindBuffer(target, buffer) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindBuffer(target, buffer);
+      switch (gl.target) {
+        case gl.ARRAY_BUFFER:
+          this._state.arrayBuffer = buffer;
+          break;
+        case gl.COPY_READ_BUFFER:
+          this._state.copyReadBuffer = buffer;
+          break;
+        case gl.COPY_WRITE_BUFFER:
+          this._state.copyWriteBuffer = buffer;
+          break;
+        case gl.PIXEL_PACK_BUFFER:
+          this._state.pixelPackBuffer = buffer;
+          break;
+        case gl.PIXEL_UNPACK_BUFFER:
+          this._state.pixelUnpackBuffer = buffer;
+          break;
+        case gl.TRANSFORM_FEEDBACK_BUFFER:
+          this._state.transformFeedbackBuffer = buffer;
+          break;
+        case gl.UNIFORM_BUFFER:
+          this._state.uniformBuffer = buffer;
+      }
+    },
+    bindBufferBase(target, index, buffer) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindBufferBase(target, index, buffer);
+      switch (target) {
+        case gl.UNIFORM_BUFFER: {
+          const ub = this._state.uniformBufferBindings[index];
+          ub.buffer = buffer;
+          ub.size = 0;
+          ub.start = 0;
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    bindBufferRange(target, index, buffer, offset, size) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindBufferRange(target, index, buffer, offset, size);
+      switch (target) {
+        case gl.UNIFORM_BUFFER: {
+          const ub = this._state.uniformBufferBindings[index];
+          ub.buffer = buffer;
+          ub.size = size;
+          ub.start = offset;
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    bindTexture(target, texture) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindTexture(target, texture);
+      const unit = this._state.textureUnits[this._state.activeTexture - gl.TEXTURE0];
+      switch (target) {
+        case gl.TEXTURE_2D:
+          unit.texture2D = texture;
+          break;
+        case gl.TEXTURE_CUBE_MAP:
+          unit.textureCubemap = texture;
+          break;
+        case gl.TEXTURE_2D_ARRAY:
+          unit.texture2DArray = texture;
+          break;
+        case gl.TEXTURE_3D:
+          unit.texture3D = texture;
+          break;
+      }
+    },
+    bindRenderbuffer(target, renderbuffer) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindRenderbuffer(target, renderbuffer);
+      this._state.renderbuffer = renderbuffer;
+    },
+    bindSampler(unit, sampler) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindSampler(unit, sampler);
+      this._state.samplerUnits[unit] = sampler;
+    },
+    bindVertexArray(va) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      if (va === null) {
+        va = this._defaultVertexArray;
+      }
+      gl.bindVertexArray(va);
+      this._state.vertexArray = va;
+    },
+    getContextAttributes() {
+      return this._contextAttributes;
+    },
+    readPixels(...args) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      clearIfNeeded(this);
+      const gl = sharedWebGLContext;
+      return gl.readPixels(...args);
+    },
+    getParameter(pname) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      const value = gl.getParameter(pname);
+      switch (pname) {
+        case gl.FRAMEBUFFER_BINDING:
+          if (value === this._drawingbufferFramebuffer) {
+            return null;
+          }
+          break;
+        case gl.DRAW_BUFFER0:
+          if (isFramebufferBindingNull(this)) {
+            if (value === gl.COLOR_ATTACHMENT0) {
+              return gl.BACK;
+            }
+          }
+          break;
+        case gl.READ_BUFFER:
+          if (isFramebufferBindingNull(this)) {
+            if (value === gl.COLOR_ATTACHMENT0) {
+              return gl.BACK;
+            }
+          }
+          break;
+        case gl.VERTEX_ARRAY_BINDING:
+          if (value === this._defaultVertexArray) {
+            return null;
+          }
+          break;
+      }
+      return value;
+    },
+    blendFunc(sfactor, dfactor) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.blendFunc(sfactor, dfactor);
+      this._state.blendSrcRgb = sfactor;
+      this._state.blendSrcAlpha = sfactor;
+      this._state.blendDstRgb = dfactor;
+      this._state.blendDstAlpha = dfactor;
+    },
+    blendEquation(mode) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.blendEquation(mode);
+      this._state.blendEquationRgb = mode;
+      this._state.blendEquationAlpha = mode;
+    },
+    blendFuncSeparate: createSaveStateNamedArgs('blendFuncSeparate', ['blendSrcRgb', 'blendDstRgb', 'blendSrcAlpha', 'blendDstAlpha']),
+    blendEquationSeparate: createSaveStateNamedArgs('blendEquationSeparate', ['blendEquationRgb', 'blendEquationAlpha']),
+    cullFace: createSaveStateNamedArgs('cullFace', ['cullFaceMode']),
+    clearDepth: createSaveStateNamedArgs('clearDepth', ['clearDepth']),
+    depthFunc: createSaveStateNamedArgs('depthFunc', ['depthFunc']),
+    depthMask: createSaveStateNamedArgs('depthMask', ['depthMask']),
+    frontFace: createSaveStateNamedArgs('frontFace', ['frontFace']),
+    lineWidth: createSaveStateNamedArgs('lineWidth', ['lineWidth']),
+    polygonOffset: createSaveStateNamedArgs('polygonOffset', ['polygonOffsetFactor', 'polygonOffsetUnits']),
+    sampleCoverage: createSaveStateNamedArgs('sampleCoverage', ['sampleCoverageValue', 'sampleCoverageUnits']),
+    clearStencil: createSaveStateNamedArgs('clearStencil', ['clearStencilValue']),
+    hint(pname, value) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.hint(pname, value);
+      this._state.generateMipmapHint = value;
+    },
+    bindFramebuffer(bindPoint, framebuffer) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      if (framebuffer === null) {
+        // bind our drawingBuffer
+        framebuffer = this._drawingbufferFramebuffer;
+      }
+      gl.bindFramebuffer(bindPoint, framebuffer);
+      switch (bindPoint) {
+        case gl.FRAMEBUFFER:
+          this._state.readFramebuffer = framebuffer;
+          this._state.drawFramebuffer = framebuffer;
+          break;
+        case gl.DRAW_FRAMEBUFFER:
+          this._state.drawFramebuffer = framebuffer;
+          break;
+        case gl.READ_FRAMEBUFFER:
+          this._state.readFramebuffer = framebuffer;
+          break;
+      }
+    },
+    drawBuffers: (function() {
+      const gl = sharedWebGLContext;
+      const backBuffer = [gl.COLOR_ATTACHMENT0];
+
+      return function(drawingBuffers) {
+        makeCurrentContext(this);
+        resizeCanvasIfChanged(this);
+        // if the virtual context is bound to canvas then fake it
+        if (isFramebufferBindingNull(this)) {
+          // this really isn't checking everything
+          // for example if the user passed in array.length != 1
+          // then we are supposed to generate an error
+          if (drawingBuffers[0] === gl.BACK) {
+            drawingBuffers = backBuffer;
+          }
+        }
+
+        gl.drawBuffers(drawingBuffers);
+      };
+    }()),
+    useProgram(program) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.useProgram(program);
+      this._state.currentProgram = program;
+    },
+    bindTransformFeedback(target, tb) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.bindTransformFeedback(target, tb);
+      this._state.transformFeedback = tb;
+    },
+    readBuffer(src) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      if (src === gl.BACK) {
+        src = gl.COLOR_ATTACHMENT0;
+      }
+      gl.readBuffer(src);
+      this._state.readBuffer = src;
+    },
+    stencilFunc(func, ref, mask) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.stencilFunc(func, ref, mask);
+      saveStencilFunc(this._state, gl.FRONT_AND_BACK, func, ref, mask);
+    },
+    stencilFuncSeparate(face, func, ref, mask) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.stencilFuncSeparate(face, func, ref, mask);
+      saveStencilFunc(this._state, face, func, ref, mask);
+    },
+    stencilMask(mask) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.stencilMask(mask);
+      saveStencilMask(this._state, gl.FRONT_AND_BACK, mask);
+    },
+    stencilMaskSeparate(face, mask) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.stencilMaskSeparate(face, mask);
+      saveStencilMask(this._state, face, mask);
+    },
+    stencilOp(fail, zfail, zpass) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.stencilOp(fail, zfail, zpass);
+      saveStencilOp(this._state, gl.FRONT_AND_BACK, fail, zfail, zpass);
+    },
+    stencilOpSeparate(face, fail, zfail, zpass) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      gl.stencilOpSeparate(face, fail, zfail, zpass);
+      saveStencilOp(this._state, face, fail, zfail, zpass);
+    },
+  };
+
   // copy all WebGL constants and functions to the prototype of
   // VirtualWebGLContext
-  for (let key in WebGL2RenderingContext.prototype) {
+  for (const key in WebGL2RenderingContext.prototype) {
     switch (key) {
       case 'canvas':
       case 'drawingBufferWidth':
@@ -554,39 +881,29 @@
       default: {
         const value = WebGL2RenderingContext.prototype[key];
         let newValue = value;
-        switch (key) {
-          case 'getContextAttributes':
-            newValue = virtualGetContextAttributes;
-            break;
-          case 'getExtension':
-            newValue = createGetExtensionWrapper(value);
-            break;
-          case 'bindFramebuffer':
-            newValue = virtualBindFramebuffer;
-            break;
-          case 'getParameter':
-            newValue = virtualGetParameter;
-            break;
-          case 'readPixels':
-            newValue = virtualReadPixels;
-            break;
-          case 'clear':
-          case 'drawArrays':
-          case 'drawElements':
-          case 'drawArraysInstanced':
-          case 'drawElementsInstanced':
-          case 'drawRangeElements':
-            newValue = createDrawWrapper(value);
-            break;
-          case 'drawBuffers':
-            newValue = virtualDrawBuffers;
-            break;
-          default:
-            if (typeof value === 'function') {
-              newValue = createWrapper(value, key);
-            }
-            break;
-         }
+        const fn = virtualFns[key];
+        if (fn) {
+          newValue = fn;
+        } else {
+          switch (key) {
+            case 'getExtension':
+              newValue = createGetExtensionWrapper(value);
+              break;
+            case 'clear':
+            case 'drawArrays':
+            case 'drawElements':
+            case 'drawArraysInstanced':
+            case 'drawElementsInstanced':
+            case 'drawRangeElements':
+              newValue = createDrawWrapper(value);
+              break;
+            default:
+              if (typeof value === 'function') {
+                newValue = createWrapper(value, key);
+              }
+              break;
+           }
+        }
          VirtualWebGLContext.prototype[key] = newValue;
          break;
       }
@@ -676,107 +993,15 @@
     // save all WebGL state (current bindings, current texture units,
     // current attributes and/or vertex shade object, current program,
     // current blend, stencil, zBuffer, culling, viewport etc... state
-    const gl = sharedWebGLContext;
-
-    state.activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-
-    // save texture units
-    for (let i = 0; i < numTextureUnits; ++i) {
-      gl.activeTexture(gl.TEXTURE0 + i);
-      const unit = state.textureUnits[i];
-      unit.texture2D = gl.getParameter(gl.TEXTURE_BINDING_2D);
-      unit.textureCubemap = gl.getParameter(gl.TEXTURE_BINDING_CUBE_MAP);
-      unit.texture2DArray = gl.getParameter(gl.TEXTURE_BINDING_2D_ARRAY);
-      unit.texture3D = gl.getParameter(gl.TEXTURE_BINDING_3D);
-      gl.bindSampler(i, state.samplerUnits[i]);
-    }
-
-    // bindings
-    state.arrayBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
-    state.renderbuffer = gl.getParameter(gl.RENDERBUFFER_BINDING);
-    state.copyReadBuffer = gl.getParameter(gl.COPY_READ_BUFFER_BINDING);
-    state.copyWriteBuffer = gl.getParameter(gl.COPY_WRITE_BUFFER_BINDING);
-    state.pixelPackBuffer = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING);
-    state.pixelUnpackBuffer = gl.getParameter(gl.PIXEL_UNPACK_BUFFER_BINDING);
-    state.transformFeedbackBuffer = gl.getParameter(gl.TRANSFORM_FEEDBACK_BUFFER_BINDING);
-    state.uniformBuffer = gl.getParameter(gl.UNIFORM_BUFFER_BINDING);
-    state.drawFramebuffer = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING);
-    state.readFramebuffer = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
-
-    // uniform buffer bindings
-    for (let i = 0; i < numUniformBufferBindings; ++i) {
-      const ub = state.uniformBufferBindings[i];
-      ub.buffer = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, i);
-      ub.size = gl.getIndexedParameter(gl.UNIFORM_BUFFER_SIZE, i);
-      ub.start = gl.getIndexedParameter(gl.UNIFORM_BUFFER_START, i);
-    }
-
-    state.readBuffer = gl.getParameter(gl.READ_BUFFER);
- 
-    // save attributes
-    state.vertexArray = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
-    state.transformFeedback = gl.getParameter(gl.TRANSFORM_FEEDBACK_BINDING);
-
-    state.blend = gl.getParameter(gl.BLEND);
-    state.cullFace = gl.getParameter(gl.CULL_FACE);
-    state.depthTest = gl.getParameter(gl.DEPTH_TEST);
-    state.dither = gl.getParameter(gl.DITHER);
-    state.polygonOffsetFill = gl.getParameter(gl.POLYGON_OFFSET_FILL);
-    state.rasterDiscard = gl.getParameter(gl.RASTERIZER_DISCARD);
-    state.sampleAlphaToCoverage = gl.getParameter(gl.SAMPLE_ALPHA_TO_COVERAGE);
-    state.sampleCoverage = gl.getParameter(gl.SAMPLE_COVERAGE);
-    state.scissorTest = gl.getParameter(gl.SCISSOR_TEST);
-    state.stencilTest = gl.getParameter(gl.STENCIL_TEST);
-
-    state.packAlignment = gl.getParameter(gl.PACK_ALIGNMENT);
-    state.unpackAlignment = gl.getParameter(gl.UNPACK_ALIGNMENT);
-    state.unpackColorspaceConversion = gl.getParameter(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL);
-    state.unpackFlipY = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
-    state.unpackPremultiplyAlpha = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL);
-
-    state.currentProgram = gl.getParameter(gl.CURRENT_PROGRAM);
-    state.viewport = gl.getParameter(gl.VIEWPORT);
-    state.scissor = gl.getParameter(gl.SCISSOR_BOX);
-    state.blendSrcRgb = gl.getParameter(gl.BLEND_SRC_RGB);
-    state.blendDstRgb = gl.getParameter(gl.BLEND_DST_RGB);
-    state.blendSrcAlpha = gl.getParameter(gl.BLEND_SRC_ALPHA);
-    state.blendDstAlpha = gl.getParameter(gl.BLEND_DST_ALPHA);
-    state.blendEquationRgb = gl.getParameter(gl.BLEND_EQUATION_RGB);
-    state.blendEquationAlpha = gl.getParameter(gl.BLEND_EQUATION_ALPHA);
-    state.blendColor = gl.getParameter(gl.BLEND_COLOR);
-    state.colorClearValue = gl.getParameter(gl.COLOR_CLEAR_VALUE);
-    state.colorMask = gl.getParameter(gl.COLOR_WRITEMASK);
-    state.cullFaceMode = gl.getParameter(gl.CULL_FACE_MODE);
-    state.depthClearValue = gl.getParameter(gl.DEPTH_CLEAR_VALUE);
-    state.depthFunc = gl.getParameter(gl.DEPTH_FUNC);
-    state.depthRange = gl.getParameter(gl.DEPTH_RANGE);
-    state.depthMask = gl.getParameter(gl.DEPTH_WRITEMASK);
-    state.frontFace = gl.getParameter(gl.FRONT_FACE);
-    state.generateMipmapHint = gl.getParameter(gl.GENERATE_MIPMAP_HINT);
-    state.lineWidth = gl.getParameter(gl.LINE_WIDTH);
-    state.polygonOffsetFactor = gl.getParameter(gl.POLYGON_OFFSET_FACTOR);
-    state.polygonOffsetUnits = gl.getParameter(gl.POLYGON_OFFSET_UNITS);
-    state.sampleCoverageValue = gl.getParameter(gl.SAMPLE_COVERAGE_VALUE);
-    state.sampleCoverageUnits = gl.getParameter(gl.SAMPLE_COVERAGE_INVERT);
-    state.stencilBackFail = gl.getParameter(gl.STENCIL_BACK_FAIL);
-    state.stencilBackFunc = gl.getParameter(gl.STENCIL_BACK_FUNC);
-    state.stencilBackPassDepthFail = gl.getParameter(gl.STENCIL_BACK_PASS_DEPTH_FAIL);
-    state.stencilBackPassDepthPass = gl.getParameter(gl.STENCIL_BACK_PASS_DEPTH_PASS);
-    state.stencilBackRef = gl.getParameter(gl.STENCIL_BACK_REF);
-    state.stencilBackValueMask = gl.getParameter(gl.STENCIL_BACK_VALUE_MASK);
-    state.stencilBackWriteMask = gl.getParameter(gl.STENCIL_BACK_WRITEMASK);
-    state.stencilClearValue = gl.getParameter(gl.STENCIL_CLEAR_VALUE);
-    state.stencilFail = gl.getParameter(gl.STENCIL_FAIL);
-    state.stencilFunc = gl.getParameter(gl.STENCIL_FUNC);
-    state.stencilPassDepthFail = gl.getParameter(gl.STENCIL_PASS_DEPTH_FAIL);
-    state.stencilPassDepthPass = gl.getParameter(gl.STENCIL_PASS_DEPTH_PASS);
-    state.stencilRef = gl.getParameter(gl.STENCIL_REF);
-    state.stencilValueMask = gl.getParameter(gl.STENCIL_VALUE_MASK);
-    state.stencilWriteMask = gl.getParameter(gl.STENCIL_WRITEMASK);
-
     for (const fns of extensionSaveRestoreHelpersArray) {
       fns.save(state, vCtx);
     }
+  }
+
+  function setStencil(gl, face, st) {
+    gl.stencilFuncSeparate(face, st.func, st.ref, st.valueMask);
+    gl.stencilOpSeparate(face, st.fail, st.depthFail, st.depthPass);
+    gl.stencilMaskSeparate(face, st.writeMask);
   }
 
   function restoreAllState(state, vCtx) {
@@ -787,6 +1012,14 @@
     // current attributes and/or vertex shade object, current program,
     // current blend, stencil, zBuffer, culling, viewport etc... state
     const gl = sharedWebGLContext;
+
+    gl.bindRenderbuffer(gl.RENDERBUFFER, state.renderbuffer);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, state.readFramebuffer);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, state.drawFramebuffer);
+
+    // restore attributes
+    gl.bindVertexArray(state.vertexArray);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, state.transformFeedback);
 
     // restore texture units
     for (let i = 0; i < numTextureUnits; ++i) {
@@ -799,23 +1032,7 @@
     }
     gl.activeTexture(state.activeTexture);
 
-    // restore attributes
-    gl.bindVertexArray(state.vertexArray);
-    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, state.transformFeedback);
-
-    // bindings'
-    gl.bindBuffer(gl.ARRAY_BUFFER, state.arrayBuffer);
-    gl.bindBuffer(gl.COPY_READ_BUFFER, state.copyReadBuffer);
-    gl.bindBuffer(gl.COPY_WRITE_BUFFER, state.copyWriteBuffer);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, state.pixelPackBuffer);
-    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, state.pixelUnpackBuffer);
-    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, state.transformFeedbackBuffer);
-    gl.bindBuffer(gl.UNIFORM_BUFFER, state.uniformBuffer);
-    gl.bindRenderbuffer(gl.RENDERBUFFER, state.renderbuffer);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, state.readFramebuffer);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, state.drawFramebuffer);
-
-    // uniform buffer bindings
+    // uniform buffer bindings (must be restored before UNIFORM_BUFFER restore)
     for (let i = 0; i < numUniformBufferBindings; ++i) {
       const ub = state.uniformBufferBindings[i];
       if (ub.size || ub.start) {
@@ -825,25 +1042,24 @@
       }
     }
 
+    // bindings
+    gl.bindBuffer(gl.ARRAY_BUFFER, state.arrayBuffer);
+    gl.bindBuffer(gl.COPY_READ_BUFFER, state.copyReadBuffer);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, state.copyWriteBuffer);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, state.pixelPackBuffer);
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, state.pixelUnpackBuffer);
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, state.transformFeedbackBuffer);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, state.uniformBuffer);
+
     gl.readBuffer(state.readBuffer);
 
-    enableDisable(gl, gl.BLEND, state.blend);
-    enableDisable(gl, gl.CULL_FACE, state.cullFace);
-    enableDisable(gl, gl.DEPTH_TEST, state.depthTest);
-    enableDisable(gl, gl.DITHER, state.dither);
-    enableDisable(gl, gl.POLYGON_OFFSET_FILL, state.polygonOffsetFill);
-    enableDisable(gl, gl.RASTERIZER_DISCARD, state.rasterDiscard);
-    enableDisable(gl, gl.SAMPLE_ALPHA_TO_COVERAGE, state.sampleAlphaToCoverage);
-    enableDisable(gl, gl.SAMPLE_COVERAGE, state.sampleCoverage);
-    enableDisable(gl, gl.SCISSOR_TEST, state.scissorTest);
-    enableDisable(gl, gl.STENCIL_TEST, state.stencilTest);
+    state.enable.forEach((value, key) => {
+      enableDisable(gl, key, value);
+    });
 
-
-    gl.pixelStorei(gl.PACK_ALIGNMENT, state.packAlignment);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, state.unpackAlignment);
-    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, state.unpackColorspaceConversion);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, state.unpackFlipY);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, state.unpackPremultiplyAlpha);
+    state.pack.forEach((value, key) => {
+      gl.pixelStorei(key, value);
+    });
 
     gl.useProgram(state.currentProgram);
 
@@ -852,10 +1068,10 @@
     gl.blendFuncSeparate(state.blendSrcRgb, state.blendDstRgb, state.blendSrcAlpha, state.blendDstAlpha);
     gl.blendEquationSeparate(state.blendEquationRgb, state.blendEquationAlpha);
     gl.blendColor(...state.blendColor);
-    gl.clearColor(...state.colorClearValue);
+    gl.clearColor(...state.clearColor);
     gl.colorMask(...state.colorMask);
     gl.cullFace(state.cullFaceMode);
-    gl.clearDepth(state.depthClearValue);
+    gl.clearDepth(state.clearDepth);
     gl.depthFunc(state.depthFunc);
     gl.depthRange(...state.depthRange);
     gl.depthMask(state.depthMask);
@@ -864,12 +1080,10 @@
     gl.lineWidth(state.lineWidth);
     gl.polygonOffset(state.polygonOffsetFactor, state.polygonOffsetUnits);
     gl.sampleCoverage(state.sampleCoverageValue, state.sampleCoverageUnits);
-    gl.stencilFuncSeparate(gl.BACK, state.stencilBackFunc, state.stencilBackRef, state.stencilBackValueMask);
-    gl.stencilFuncSeparate(gl.FRONT, state.stencilFunc, state.stencilRef, state.stencilValueMask);
-    gl.stencilOpSeparate(gl.BACK, state.stencilBackFail, state.stencilBackPassDepthFail, state.stencilBackPassDepthPass);
-    gl.stencilOpSeparate(gl.FRONT, state.stencilFail, state.stencilPassDepthFail, state.stencilPassDepthPass);
-    gl.stencilMaskSeparate(gl.BACK, state.stencilBackWriteMask);
-    gl.stencilMaskSeparate(gl.FRONT, state.stencilWriteMask);
+
+    setStencil(gl, gl.BACK, state.stencilBack);
+    setStencil(gl, gl.FRONT, state.stencilFront);
+
     gl.clearStencil(state.stencilClearValue);
 
     for (const fns of extensionSaveRestoreHelpersArray) {
@@ -919,7 +1133,7 @@
       });
     };
 
-  }(window.requestAnimationFrame))
+  }(window.requestAnimationFrame));
 
   function setup(options) {
     Object.assign(settings, options);

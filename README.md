@@ -136,19 +136,11 @@ to give your custom compositor a chance to clean up.
 
 ## Perf
 
-You can see the demos linked above probably run at a reasonable rate for a few
-canvases so if you have 2 or 3 things (like the mapbox example or the unity example)
-Then it's probably ok. For putting lots of canvases on the page though you'd
-be better off using one of the solutions mentioned above.
+The WebGL2 wrapper is newer and saves state so it's pretty fast. 
+The WebGL1 wrapper is older and queries state so it's pretty slow.
 
-There are certain low-hanging optimizations. For example you could track the highest used attribute and
-highest used texture unit across contexts and only save and restore up to that highest
-attribute and texture unit since most apps don't use all of them. If your app uses VAOs that issue
-disappears.
-
-The other big perf issue is you can't render directly to different canvases so I have
+Another perf issue is you can't render directly to different canvases so I have
 to make each of the canvases use a `Canvas2DRenderingContext` and call `drawImage`.
-
 That could be solved maybe with `OffscreenCanvas` and `ImageBitmapRenderingContext`
 but those features haven't shipped without a flag as of 2018-06-05.
 
@@ -165,9 +157,6 @@ render the texture being composited using `gl.viewport` and `gl.scissor`
 
 If your canvases are not all on screen you could try using [an augmented requestAnimationFrame](https://github.com/greggman/requestanimationframe-fix.js)
 that only calls the requestAnimationFrame callback to draw the canvases that are on screen.
-
-Another solution is to track all the state internally rather than querying it from WebGL. There's a lot
-of state to track. You'd track it, and then ideally only lazily restore it if possible.
 
 ## Future Enhancements
 

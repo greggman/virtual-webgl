@@ -1,0 +1,16 @@
+{
+  "name": "rockfall",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Gregg Tavares",
+  "devDependencies": {
+    "eslint": "^8.11.0",
+    "eslint-plugin-html": "^6.2.0",
+    "eslint-plugin-optional-comma-spacing": "^0.0.4",
+    "eslint-plugin-require-trailing-comma": "^0.0.1"
+  }
+}
