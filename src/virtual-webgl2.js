@@ -106,8 +106,8 @@
 
     HTMLCanvasElement.prototype.getContext = (function(origFn) {
     return function(type, contextAttributes) {
-      if ((type === 'webgl' || type === 'experimental-webgl') && settings.disableWebGL1) {
-        return null;
+      if (type === 'webgl' || type === 'experimental-webgl') {
+        return createOrGetVirtualWebGLContext(this, type, contextAttributes);
       } else if (type === 'webgl2') {
         return createOrGetVirtualWebGLContext(this, type, contextAttributes);
       }
@@ -164,91 +164,105 @@
     }
   }
 
+  function virtualGLConstruct(canvas, contextAttributes = {}, compositor, disposeHelper) {
+    const gl = sharedWebGLContext;
+    this._canvas = canvas;
+    // Should use Symbols or something to hide these variables from the outside.
+
+    this._compositor = compositor;
+    this._disposeHelper = disposeHelper;
+    this._extensions = {};
+    // based on context attributes and canvas.width, canvas.height
+    // create a texture and framebuffer
+    this._drawingbufferTexture = gl.createTexture();
+    this._drawingbufferFramebuffer = gl.createFramebuffer();
+    this._contextAttributes = {
+      alpha: valueOrDefault(contextAttributes.alpha, true),
+      antialias: false,
+      depth: valueOrDefault(contextAttributes.depth, true),
+      failIfMajorPerformanceCaveat: false,
+      premultipliedAlpha: valueOrDefault(contextAttributes.premultipliedAlpha, true),
+      stencil: valueOrDefault(contextAttributes.stencil, false),
+    };
+    this._preserveDrawingbuffer = valueOrDefault(contextAttributes.preserveDrawingBuffer, false);
+
+    const oldTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    const oldFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+
+    gl.bindTexture(gl.TEXTURE_2D, this._drawingbufferTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // this._drawingbufferTexture.id = canvas.id;
+    // this._drawingbufferFramebuffer.id = canvas.id;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this._drawingbufferFramebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._drawingbufferTexture, 0);
+
+    if (this._contextAttributes.depth) {
+      const oldRenderbuffer = gl.getParameter(gl.RENDERBUFFER_BINDING);
+      this._depthRenderbuffer = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, this._depthRenderbuffer);
+      const attachmentPoint = this._contextAttributes.stencil  ? gl.DEPTH_STENCIL_ATTACHMENT : gl.DEPTH_ATTACHMENT;
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachmentPoint, gl.RENDERBUFFER, this._depthRenderbuffer);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, oldRenderbuffer);
+    }
+
+    gl.bindTexture(gl.TEXTURE_2D, oldTexture);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, oldFramebuffer);
+
+    // remember all WebGL state (default bindings, default texture units,
+    // default attributes and/or vertex shade object, default program,
+    // default blend, stencil, zBuffer, culling, viewport etc... state
+    this._state = makeDefaultState(gl, canvas.width, canvas.height);
+    this._state.readFramebuffer = this._drawingbufferFramebuffer;
+    this._state.drawFramebuffer = this._drawingbufferFramebuffer;
+    this._state.readBuffer = gl.COLOR_ATTACHMENT0;
+
+    this._state.vertexArray = gl.createVertexArray();
+    this._defaultVertexArray = this._state.vertexArray;
+  }
+
+  function virtualGLDispose() {
+    this._disposeHelper();
+    const gl = sharedWebGLContext;
+    gl.deleteFramebuffer(this._drawingbufferFramebuffer);
+    gl.deleteTexture(this._drawingbufferTexture);
+    if (this._depthRenderbuffer) {
+      gl.deleteRenderbuffer(this._depthRenderbuffer);
+    }
+    if (this._compositor.dispose) {
+      this._compositor.dispose();
+    }
+    for (const [key, value] of Object.entries(this)) {
+      if (typeof value === 'function') {
+        this[key] = errorDisposedContext(key);
+      }
+    }
+    for (const [key, value] of Object.entries(this.prototype)) {
+      if (typeof value === 'function') {
+        this[key] = errorDisposedContext(key);
+      }
+    }
+  }
+
+  function virtualGLComposite(gl) {
+    this._compositor.composite(gl, this._drawingbufferTexture, this.canvas, this._contextAttributes);
+    if (!this._preserveDrawingbuffer) {
+      this._needClear = true;
+    }
+  }
+
   // Base exists so VirtualWebGLContext has a base class we can replace
   // because otherwise it's base is Object which we can't replace.
   class Base {}
   class VirtualWebGLContext extends Base {
     constructor(canvas, contextAttributes = {}, compositor, disposeHelper) {
       super();
-      const gl = sharedWebGLContext;
-      this._canvas = canvas;
-      // Should use Symbols or something to hide these variables from the outside.
-
-      this._compositor = compositor;
-      this._disposeHelper = disposeHelper;
-      this._extensions = {};
-      // based on context attributes and canvas.width, canvas.height
-      // create a texture and framebuffer
-      this._drawingbufferTexture = gl.createTexture();
-      this._drawingbufferFramebuffer = gl.createFramebuffer();
-      this._contextAttributes = {
-        alpha: valueOrDefault(contextAttributes.alpha, true),
-        antialias: false,
-        depth: valueOrDefault(contextAttributes.depth, true),
-        failIfMajorPerformanceCaveat: false,
-        premultipliedAlpha: valueOrDefault(contextAttributes.premultipliedAlpha, true),
-        stencil: valueOrDefault(contextAttributes.stencil, false),
-      };
-      this._preserveDrawingbuffer = valueOrDefault(contextAttributes.preserveDrawingBuffer, false);
-
-      const oldTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
-      const oldFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-
-      gl.bindTexture(gl.TEXTURE_2D, this._drawingbufferTexture);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      // this._drawingbufferTexture.id = canvas.id;
-      // this._drawingbufferFramebuffer.id = canvas.id;
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this._drawingbufferFramebuffer);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._drawingbufferTexture, 0);
-
-      if (this._contextAttributes.depth) {
-        const oldRenderbuffer = gl.getParameter(gl.RENDERBUFFER_BINDING);
-        this._depthRenderbuffer = gl.createRenderbuffer();
-        gl.bindRenderbuffer(gl.RENDERBUFFER, this._depthRenderbuffer);
-        const attachmentPoint = this._contextAttributes.stencil  ? gl.DEPTH_STENCIL_ATTACHMENT : gl.DEPTH_ATTACHMENT;
-        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachmentPoint, gl.RENDERBUFFER, this._depthRenderbuffer);
-        gl.bindRenderbuffer(gl.RENDERBUFFER, oldRenderbuffer);
-      }
-
-      gl.bindTexture(gl.TEXTURE_2D, oldTexture);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, oldFramebuffer);
-
-      // remember all WebGL state (default bindings, default texture units,
-      // default attributes and/or vertex shade object, default program,
-      // default blend, stencil, zBuffer, culling, viewport etc... state
-      this._state = makeDefaultState(gl, canvas.width, canvas.height);
-      this._state.readFramebuffer = this._drawingbufferFramebuffer;
-      this._state.drawFramebuffer = this._drawingbufferFramebuffer;
-      this._state.readBuffer = gl.COLOR_ATTACHMENT0;
-
-      this._state.vertexArray = gl.createVertexArray();
-      this._defaultVertexArray = this._state.vertexArray;
-    }
-    dispose() {
-      this._disposeHelper();
-      const gl = sharedWebGLContext;
-      gl.deleteFramebuffer(this._drawingbufferFramebuffer);
-      gl.deleteTexture(this._drawingbufferTexture);
-      if (this._depthRenderbuffer) {
-        gl.deleteRenderbuffer(this._depthRenderbuffer);
-      }
-      if (this._compositor.dispose) {
-        this._compositor.dispose();
-      }
-      for (const [key, value] of Object.entries(this)) {
-        if (typeof value === 'function') {
-          this[key] = errorDisposedContext(key);
-        }
-      }
-      for (const [key, value] of Object.entries(VirtualWebGLContext.prototype)) {
-        if (typeof value === 'function') {
-          this[key] = errorDisposedContext(key);
-        }
-      }
+      this.dispose = virtualGLDispose;
+      this.composite = virtualGLComposite;
+      virtualGLConstruct.call(this, canvas, contextAttributes, compositor, disposeHelper);
     }
     get canvas() {
       return this._canvas;
@@ -259,16 +273,29 @@
     get drawingBufferHeight() {
       return this.canvas.height;
     }
-    composite(gl) {
-      this._compositor.composite(gl, this._drawingbufferTexture, this.canvas, this._contextAttributes);
-      if (!this._preserveDrawingbuffer) {
-        this._needClear = true;
-      }
+  }
+  class Base2 {}
+  class VirtualWebGL2Context extends Base2 {
+    constructor(canvas, contextAttributes = {}, compositor, disposeHelper) {
+      super();
+      this.dispose = virtualGLDispose;
+      this.composite = virtualGLComposite;
+      virtualGLConstruct.call(this, canvas, contextAttributes, compositor, disposeHelper);
+    }
+    get canvas() {
+      return this._canvas;
+    }
+    get drawingBufferWidth() {
+      return this.canvas.width;
+    }
+    get drawingBufferHeight() {
+      return this.canvas.height;
     }
   }
 
   // Replace the prototype with WebGL2RenderingContext so that someCtx instanceof WebGL2RenderingContext returns true
-  Object.setPrototypeOf(Object.getPrototypeOf(VirtualWebGLContext.prototype), WebGL2RenderingContext.prototype);
+  Object.setPrototypeOf(Object.getPrototypeOf(VirtualWebGLContext.prototype), WebGLRenderingContext.prototype);
+  Object.setPrototypeOf(Object.getPrototypeOf(VirtualWebGL2Context.prototype), WebGL2RenderingContext.prototype);
 
   function makeDefaultState(gl, width, height) {
     const vao = gl.createVertexArray();
@@ -385,45 +412,6 @@
     };
 
     return state;
-  }
-
-  function createGetExtensionWrapper(origFn) {
-    return function(name) {
-      // just like the real context each extension needs a virtual class because each use
-      // of the extension might be modified (as in people adding properties to it)
-      const existingExt = this._extensions[name];
-      if (existingExt) {
-        return existingExt;
-      }
-
-      const ext = origFn.call(sharedWebGLContext, name);
-      const wrapperInfo = extensionInfo[name] || {};
-      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn || (() => {
-        console.log('trying to get extension:', name);
-      });
-      const saveRestoreHelper = extensionSaveRestoreHelpers[name];
-      if (!saveRestoreHelper) {
-        const saveRestoreMakerFn = wrapperInfo.saveRestoreMakerFn;
-        if (saveRestoreMakerFn) {
-          const saveRestore = saveRestoreMakerFn(ext);
-          extensionSaveRestoreHelpers[name] = saveRestore;
-          extensionSaveRestoreHelpersArray.push(saveRestore);
-        }
-      }
-
-      const wrapper = {
-        _context: this,
-      };
-      for (const key in ext) {
-        let value = ext[key];
-        if (typeof value === 'function') {
-          value = wrapperFnMakerFn(ext, value, name);
-        }
-        wrapper[key] = value;
-      }
-
-      return wrapper;
-    };
   }
 
   function isFramebufferBindingNull(vCtx) {
@@ -547,6 +535,45 @@
   }
 
   const virtualFns = {
+    getExtension(name) {
+      // just like the real context each extension needs a virtual class because each use
+      // of the extension might be modified (as in people adding properties to it)
+      const existingExt = this._extensions[name];
+      if (existingExt) {
+        return existingExt;
+      }
+
+      const ext = sharedWebGLContext.getExtension(name);
+      if (!ext) {
+        return null;
+      }
+      const wrapperInfo = extensionInfo[name] || {};
+      const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn || (() => {
+        console.log('trying to get extension:', name);
+      });
+      const saveRestoreHelper = extensionSaveRestoreHelpers[name];
+      if (!saveRestoreHelper) {
+        const saveRestoreMakerFn = wrapperInfo.saveRestoreMakerFn;
+        if (saveRestoreMakerFn) {
+          const saveRestore = saveRestoreMakerFn(ext);
+          extensionSaveRestoreHelpers[name] = saveRestore;
+          extensionSaveRestoreHelpersArray.push(saveRestore);
+        }
+      }
+
+      const wrapper = {
+        _context: this,
+      };
+      for (const key in ext) {
+        let value = ext[key];
+        if (typeof value === 'function') {
+          value = wrapperFnMakerFn(ext, value, name);
+        }
+        wrapper[key] = value;
+      }
+
+      return wrapper;
+    },
     activeTexture(unit) {
       makeCurrentContext(this);
       resizeCanvasIfChanged(this);
@@ -802,6 +829,12 @@
         gl.drawBuffers(drawingBuffers);
       };
     }()),
+    clear: createDrawWrapper(WebGL2RenderingContext.prototype.clear),
+    drawArrays: createDrawWrapper(WebGL2RenderingContext.prototype.drawArrays),
+    drawElements: createDrawWrapper(WebGL2RenderingContext.prototype.drawElements),
+    drawArraysInstanced: createDrawWrapper(WebGL2RenderingContext.prototype.drawArraysInstanced),
+    drawElementsInstanced: createDrawWrapper(WebGL2RenderingContext.prototype.drawElementsInstanced),
+    drawRangeElements: createDrawWrapper(WebGL2RenderingContext.prototype.drawRangeElements),
     useProgram(program) {
       makeCurrentContext(this);
       resizeCanvasIfChanged(this);
@@ -870,45 +903,197 @@
     },
   };
 
+  const webgl1Extensions = {
+    OES_texture_float: {
+      fn() {
+        return {};
+      },
+    },
+    OES_vertex_array_object: {
+      fn(vCtx) {
+        return {
+          VERTEX_ARRAY_BINDING_OES: sharedWebGLContext.VERTEX_ARRAY_BINDING,
+          createVertexArrayOES() {
+            return sharedWebGLContext.createVertexArray();
+          },
+          deleteVertexArrayOES(va) {
+            sharedWebGLContext.deleteVertexArray(va);
+          },
+          bindVertexArrayOES(va) {
+            virtualFns.bindVertexArray.call(vCtx, va);
+          },
+          isVertexArrayOES(va) {
+            return sharedWebGLContext.isVertexArray(va);
+          },
+        }
+      },
+    },
+    ANGLE_instanced_arrays: {
+      fn(vCtx) {
+        return {
+          VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE: 0x88FE,
+          drawArraysInstancedANGLE(...args) {
+            virtualFns.drawArraysInstanced.call(vCtx, ...args);
+          },
+          drawElementsInstancedANGLE(...args) {
+            virtualFns.drawElementsInstanced.call(vCtx, ...args);
+          },
+          vertexAttribDivisorANGLE(...args) {
+            sharedWebGLContext.vertexAttribDivisor(...args);
+          },
+        };
+      },
+    },
+    // We can't easily support WebGL_draw_buffers because WebGL2 does not
+    // support gl_FragData. Instead, it requires you to write your shaders
+    // in GLSL ES 3.0 if you want to use multiple color attachments. To support
+    // that correctly would require writing a GLSL parser. We need to change
+    // 'attribute' -> 'in', 'varying' -> 'out' in vertex shaders, 'varying' to 'in'
+    // in fragment shader, 'texture2D' to 'texture' and declare outputs. That sounds
+    // simple but it quickly becomes complicated.
+    //
+    // * 'texture' is a valid identifier in GLSL ES 1.0 but a reserved word in
+    //   GLSL ES 3.0 so we'd have to rename identifiers
+    //
+    // * Changing the fragment shader means it's on longer compatible with
+    //   GLSL ES 1.0 vertex shaders. But, back in WebGL1, we could easily use
+    //   the same vertex shader with and without WEBGL_draw_buffers. That means
+    //   we now need 2 versions of every vertex shader (ES 1.0 and ES 3.0), OR
+    //   we need to translate ALL shaders to GLSL ES 3.0
+    //
+    // * GLSL 1.0 shaders support dynamically indexing an array of samplers.
+    //   GLSL 3.0 does not. So we'd have to emit an emulation function.
+    //
+    // The point is it's not a trivial amount of work.
+    /*
+    WEBGL_draw_buffers: {
+      fn(vCtx) {
+        return {
+          COLOR_ATTACHMENT0_WEBGL     : 0x8CE0,
+          COLOR_ATTACHMENT1_WEBGL     : 0x8CE1,
+          COLOR_ATTACHMENT2_WEBGL     : 0x8CE2,
+          COLOR_ATTACHMENT3_WEBGL     : 0x8CE3,
+          COLOR_ATTACHMENT4_WEBGL     : 0x8CE4,
+          COLOR_ATTACHMENT5_WEBGL     : 0x8CE5,
+          COLOR_ATTACHMENT6_WEBGL     : 0x8CE6,
+          COLOR_ATTACHMENT7_WEBGL     : 0x8CE7,
+          COLOR_ATTACHMENT8_WEBGL     : 0x8CE8,
+          COLOR_ATTACHMENT9_WEBGL     : 0x8CE9,
+          COLOR_ATTACHMENT10_WEBGL    : 0x8CEA,
+          COLOR_ATTACHMENT11_WEBGL    : 0x8CEB,
+          COLOR_ATTACHMENT12_WEBGL    : 0x8CEC,
+          COLOR_ATTACHMENT13_WEBGL    : 0x8CED,
+          COLOR_ATTACHMENT14_WEBGL    : 0x8CEE,
+          COLOR_ATTACHMENT15_WEBGL    : 0x8CEF,
+
+          DRAW_BUFFER0_WEBGL          : 0x8825,
+          DRAW_BUFFER1_WEBGL          : 0x8826,
+          DRAW_BUFFER2_WEBGL          : 0x8827,
+          DRAW_BUFFER3_WEBGL          : 0x8828,
+          DRAW_BUFFER4_WEBGL          : 0x8829,
+          DRAW_BUFFER5_WEBGL          : 0x882A,
+          DRAW_BUFFER6_WEBGL          : 0x882B,
+          DRAW_BUFFER7_WEBGL          : 0x882C,
+          DRAW_BUFFER8_WEBGL          : 0x882D,
+          DRAW_BUFFER9_WEBGL          : 0x882E,
+          DRAW_BUFFER10_WEBGL         : 0x882F,
+          DRAW_BUFFER11_WEBGL         : 0x8830,
+          DRAW_BUFFER12_WEBGL         : 0x8831,
+          DRAW_BUFFER13_WEBGL         : 0x8832,
+          DRAW_BUFFER14_WEBGL         : 0x8833,
+          DRAW_BUFFER15_WEBGL         : 0x8834,
+
+          MAX_COLOR_ATTACHMENTS_WEBGL : 0x8CDF,
+          MAX_DRAW_BUFFERS_WEBGL      : 0x8824,
+
+          drawBuffersWEBGL(buffers) {
+            virtualFns.drawBuffers.call(vCtx, buffers);
+          },
+        };
+      },
+    },
+    */
+  };
+  
+  const texImage2DArgParersMap = new Map([
+    [9, function([target, level, internalFormat, width, height, , format, type]) {
+      return {target, level, internalFormat, width, height, format, type};
+    }, ],
+    [6, function([target, level, internalFormat, format, type, texImageSource]) {
+      return {target, level, internalFormat, width: texImageSource.width, height: texImageSource.height, format, type};
+    }, ],
+    [10, function([target, level, internalFormat, width, height, , format, type]) {
+      return {target, level, internalFormat, width, height, format, type};
+    }, ],
+  ]);
+
+  const webgl1Fns = {
+    getExtension(name) {
+      const existingExt = this._extensions[name];
+      if (existingExt) {
+        return existingExt;
+      }
+      
+      const info = webgl1Extensions[name];
+      if (!info) {
+        return virtualFns.getExtension.call(this, name);
+      }
+
+      return info.fn(this);
+    },
+    texImage2D(...args) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      const fn = texImage2DArgParersMap.get(args.length);
+      const {internalFormat, type} = fn(args);
+      if (type === sharedWebGLContext.FLOAT) {
+        switch (internalFormat) {
+          case gl.RGBA: args[2] = gl.RGBA32F; break;
+          case gl.RGB: args[2] = gl.RGB32F; break;
+        }
+      }
+      gl.texImage2D(...args);
+    },
+    getSupportedExtensions: function() {
+      return [
+        ...sharedWebGLContext.getSupportedExtensions(),
+        "OES_texture_float",
+        "WEBGL_depth_texture",
+        "OES_vertex_array_object",
+        // "WEBGL_draw_buffers",  // See other comment
+      ];
+    },
+  };
+
   // copy all WebGL constants and functions to the prototype of
   // VirtualWebGLContext
-  for (const key in WebGL2RenderingContext.prototype) {
-    switch (key) {
-      case 'canvas':
-      case 'drawingBufferWidth':
-      case 'drawingBufferHeight':
-        break;
-      default: {
-        const value = WebGL2RenderingContext.prototype[key];
-        let newValue = value;
-        const fn = virtualFns[key];
-        if (fn) {
-          newValue = fn;
-        } else {
-          switch (key) {
-            case 'getExtension':
-              newValue = createGetExtensionWrapper(value);
-              break;
-            case 'clear':
-            case 'drawArrays':
-            case 'drawElements':
-            case 'drawArraysInstanced':
-            case 'drawElementsInstanced':
-            case 'drawRangeElements':
-              newValue = createDrawWrapper(value);
-              break;
-            default:
-              if (typeof value === 'function') {
-                newValue = createWrapper(value, key);
-              }
-              break;
-           }
+  function copyProperties(keys, VirtualClass, overrideFns) { 
+    for (const key of keys) {
+      switch (key) {
+        case 'canvas':
+        case 'drawingBufferWidth':
+        case 'drawingBufferHeight':
+          break;
+        default: {
+          const value = WebGL2RenderingContext.prototype[key];
+          let newValue = value;
+          const fn = overrideFns[key] || virtualFns[key];
+          if (fn) {
+            newValue = fn;
+          } else {
+            if (typeof value === 'function') {
+              newValue = createWrapper(value, key);
+            }
+          }
+           VirtualClass.prototype[key] = newValue;
+           break;
         }
-         VirtualWebGLContext.prototype[key] = newValue;
-         break;
       }
     }
   }
+  copyProperties(Object.keys(WebGLRenderingContext.prototype), VirtualWebGLContext, webgl1Fns);
+  copyProperties(Object.keys(WebGL2RenderingContext.prototype), VirtualWebGL2Context, {});
 
   function makeCurrentContext(vCtx) {
     if (currentVirtualContext === vCtx) {
@@ -961,9 +1146,14 @@
     }
 
     const compositor = settings.compositorCreator(canvas, type, contextAttributes) || new DefaultCompositor(canvas, type, contextAttributes);
-    const newVirtualCtx = new VirtualWebGLContext(canvas, contextAttributes, compositor, () => {
-      canvasToVirtualContextMap.delete(canvas);
-    });
+    const newVirtualCtx = type === 'webgl2'
+        ? new VirtualWebGL2Context(canvas, contextAttributes, compositor, () => {
+            canvasToVirtualContextMap.delete(canvas);
+          })
+        : new VirtualWebGLContext(canvas, contextAttributes, compositor, () => {
+            canvasToVirtualContextMap.delete(canvas);
+          });
+        
     canvasToVirtualContextMap.set(canvas, newVirtualCtx);
 
     return newVirtualCtx;

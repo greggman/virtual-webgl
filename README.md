@@ -3,7 +3,9 @@
 Virtualizes a single WebGL context into multiple contexts
 
 [A demo of some WebGL apps running with only 1 shared WebGL context](https://greggman.github.io/virtual-webgl/example/example.html)
-and using `alpha: false`, `premultipliedAlpha: false`, `preserveDrawingBuffer: true` and some other things. [A similar demo for WebGL2](https://greggman.github.io/virtual-webgl/example/example2.html).
+and using `alpha: false`, `premultipliedAlpha: false`, `preserveDrawingBuffer: true`
+and some other things. [A similar demo for WebGL2](https://greggman.github.io/virtual-webgl/example/example2.html).
+And, [one for a mix of WebGL1 and WebGL2](https://greggman.github.io/virtual-webgl/example/example1and2.html).
 
 [A demo of creating and disposing of webgl contexts](https://greggman.github.io/virtual-webgl/example/dispose.html).
 WebGL implementations often delete the oldest context when too many are created. Using virtual-webgl you can
@@ -20,9 +22,10 @@ Compare to [the original without post processing](https://greggman.github.io/vir
 
 Browsers usually limit WebGL to 8 to 16 contexts max. This is one idea to overcome that limit.
 
-I don't actually recommend this at all. If you're in control of your code then there are
-much better solutions [like this for raw webgl](http://twgljs.org/examples/itemlist.html)
-and [this for three.js](https://threejs.org/examples/webgl_multiple_elements.html) (both if which I wrote BTW &#x1F61B;)
+If you're in control of your code then there are arguably better solutions
+[like this for raw webgl](http://twgljs.org/examples/itemlist.html)
+and [this for three.js](https://threejs.org/examples/webgl_multiple_elements.html)
+(both if which I wrote BTW &#x1F61B;)
 
 I mostly wrote this for a fun short technical challenge. I have no plans to actually use it
 or maintain it. If you find a problem feel free to file an issue but I can't promise I
@@ -44,6 +47,11 @@ you can do things like
 
 With normal WebGL contexts you can't use resources from one context in another
 context but with virtual contexts you can.
+
+This is actually probably the best use-case. You can write 2 different libraries
+independently of each other using WebGL and have them share resources and they
+won't have to worry about stepping on each other's WebGL state. An example might
+be, you have a video conferencing library and you want to add an effects library.
 
 ### Use the output of one WebGL app inside another
 
@@ -73,41 +81,69 @@ or for WebGL2 use
 
 ## Writing your own compositor
 
+The compositor is the part of virtual-webgl that's responsible for updating the
+individual canvas. The default compositor draws the framebuffer representing the
+drawingbuffer of that canvas, into an offscreen canvas and then calls canvas
+2D's drawImage to get the WebGL results into the canvas. You can change this to
+do something else by providing your own compositor.
+
 A full solution would probably require some other method but ... If you look in
-[unity-example/index.html](https://greggman.github.io/virtual-webgl/unity-example/index.html)
-you'll see code that (a) disables WebGL2 so that Unity falls
-back to WebGL1 (since this virtual-webgl currently only supports WebGL1), and (b) creates a custom
-compositor that draws a different result than the default compositor.
+[unity-example/index2.html](https://greggman.github.io/virtual-webgl/unity-example/index2.html)
+you'll see code that creates a custom compositor that draws a different result
+than the default compositor.
 
-The idea for the `createCompositor` function is that you probably need different compositors
-for each canvas on the page so it's up to you how to do that. Either check the `canvas` passed
-in and it's ID or keep a count of compositors created and do different things for different ones
-or whatever. If you return nothing/undefined the default compositor will be created for that canvas.
+The idea for the `createCompositor` function is that you probably need different
+compositors for each canvas on the page so it's up to you how to do that. For
+example you could check the `canvas` passed in and its ID or some `data`
+attribute and do create different compositors for different canvases. If you
+return nothing/undefined the default compositor will be created for that canvas.
 
-As another example if you wanted to draw a MapGL texture inside THREE.js then you'd probably
-make the one compositor do nothing except record the texture needed to use inside three.
-For three's canvas you'd use the default compositor. [see this](https://greggman.github.io/virtual-webgl/mapbox-gl/index.html).
-Not sure how to use an external WebGL texture in THREE.js so the example uses twgl.
+As another example, if you wanted to draw a MapGL texture inside THREE.js then
+you'd probably make the one compositor do nothing except record the texture
+needed to use inside three.js. For three's canvas you'd use the default compositor.
+[see this](https://greggman.github.io/virtual-webgl/mapbox-gl/index.html). I was not
+sure how to use an external WebGL texture in THREE.js so the example uses twgl.
 
 Note: If a compositor has a `dispose` method it will be called if `context.dispose` is called
 to give your custom compositor a chance to clean up.
 
 ## Limits and Issues
 
-* In WebGL2 you must end queries and transformFeedback before exiting
-  the current event. The good things is, AFAIK, pretty much all WebGL
-  apps already do this so it should't be a problem but not finishing
-  those is not technically against the spec.
+* In WebGL2 you must end queries and transformFeedback before exiting the
+  current event. The good things is, AFAIK, pretty much all WebGL2 apps that use
+  queries and/or transformFeedback already do this so it should't be a problem.
+  But, not finishing those before exiting the event is not technically against
+  the spec.
 
-* You can't mix WebGL1 and WebGL2
+* WebGL1 is emulated on WebGL2 in virtual-webgl2.js
 
-  WebGL1 and WebGL2 have a few incompatibilities meaning that emulating
-  WebGL1 on top of WebGL2 is more work. It might not be that much work.
-  I have not bothered to think about it. Off the top of my head you'd
-  have to emulate all the various WebGL1 only extensions like
-  OES_vertex_array_object, WEBGL_draw_buffers, different floating
-  point texture support, differences in how depth-stencil renderbuffers
-  work, and maybe a few other things.
+  When using virtual-webgl2.js WebGL2 functions are not available on virtual
+  WebGL1 contexts but WebGL2 constants can be passed to WebGL1 contexts.
+
+  In other words:
+  
+  ```js
+  webgl1Ctx.texImage3D(...);                         // error! no such function
+  webgl1Ctx.bindTexture(webgl1ctx.TEXTURE_3D, tex);  // error! TEXTURE_3D is not defined
+  webgl1Ctx.bindTexture(webgl2ctx.TEXTURE_3D, tex);  // ok
+  ```
+
+  This should arguably not a come up. A WebGL1 context would be using
+  WebGL1 constants. I only point this out to say virtual-webgl doesn't
+  force WebGL1 compliance.
+
+* WebGL1 on WebGL2 support is limited
+
+  I took a quick stab at trying to emulate WebGL1 on WebGL2 so that
+  you could mix WebGL1 and WebGL2 in the same WebGL2 context.
+  That includes extensions like `OES_vertex_array_object`, `OES_texture_float`,
+  and `ANGLE_instanced_arrays`.
+
+  Unfortunately, when I got to `WEBGL_draw_buffers` I realized that
+  emulating that would require a full GLSL parser and re-writer to
+  change GLSL ES 1.0 to GLSL ES 3.0 and several complex transformations.
+
+  That's the long way of saying WebGL1 emulation on WebGL2 is incomplete.
 
 * There are no checks for errors.
 
@@ -115,7 +151,7 @@ to give your custom compositor a chance to clean up.
   which means checking for errors really slows things down so
   this Virtual WebGL also doesn't check for errors. Your code
   should not be generating errors in the first place so if it is
-  fix your code.
+  fix your code!
 
   Where this might come up? I forget the details of the spec but,
   lets say you make an invalid program. When you call `gl.useProgram`
@@ -136,40 +172,47 @@ to give your custom compositor a chance to clean up.
 
 ## Perf
 
-The WebGL2 wrapper is newer and saves state so it's pretty fast. 
-The WebGL1 wrapper is older and queries state so it's pretty slow.
+The WebGL2 wrapper (virtual-webgl2.js) is newer and saves state so it's pretty fast. 
+The WebGL1 wrapper (virtual-webgl.js) is older and queries state so it's pretty slow.
 
 Another perf issue is you can't render directly to different canvases so I have
-to make each of the canvases use a `Canvas2DRenderingContext` and call `drawImage`.
-That could be solved maybe with `OffscreenCanvas` and `ImageBitmapRenderingContext`
-but those features haven't shipped without a flag as of 2018-06-05.
+to make each of the canvases use a `Canvas2DRenderingContext` and call
+`drawImage`. That could be solved maybe with `OffscreenCanvas` and
+`ImageBitmapRenderingContext` but those features haven't shipped without a flag
+as of 2018-06-05.
 
-It could also be solved using the techniques used in [this sample](http://twgljs.org/examples/itemlist.html)
+It could also be solved using the techniques used in
+[this sample](http://twgljs.org/examples/itemlist.html)
 
-Basically put the canvas of the shared GL context full window size in the background and instead
-of compositing by copying to a 2D canvas, composite by setting the viewport/scissor and render to
-the shared GL context's canvas. The limitation of course is that the result won't appear in front
-of other elements but usually that's ok.
+Basically, put the canvas of the shared GL context full window size in the
+background and instead of compositing by copying to a 2D canvas, composite by
+setting the viewport/scissor and render to the shared GL context's canvas. The
+limitation of course is that the result won't appear in front of other elements
+but usually that's ok.
 
-That should be trivial to implement using a custom compositor. The first time you get a compositor
-put the canvas of the shared context (the one that gets passed to `composite`) in the page and then
-render the texture being composited using `gl.viewport` and `gl.scissor`
+That should be trivial to implement using a custom compositor. The first time
+you get a compositor put the canvas of the shared context (the one that gets
+passed to `composite`) in the page and then render the texture being composited
+using `gl.viewport` and `gl.scissor`
 
-If your canvases are not all on screen you could try using [an augmented requestAnimationFrame](https://github.com/greggman/requestanimationframe-fix.js)
+If your canvases are not all on screen you could try using
+[an augmented requestAnimationFrame](https://github.com/greggman/requestanimationframe-fix.js)
 that only calls the requestAnimationFrame callback to draw the canvases that are on screen.
 
 ## Future Enhancements
 
-virtual-webgl adds a `dispose` method to the virtual contexts letting you free the virtual context.
-As it is it leaves it up to the app to free all of its own GPU resources. `dispose` only disposes of
-internal resources.
+virtual-webgl adds a `dispose` method to the virtual contexts letting you free
+the virtual context. As it is it leaves it up to the app to free all of its own
+GPU resources. `dispose` only disposes of internal resources.
 
-It probably would not be that hard to track resources by context and free them on dispose. It's not
-100% clear that's the right thing to do always. For example since virtual-webgl lets you share
-resources across contexts it would be a perfectly valid use-case to create a temporary context just to create some
+It probably would not be that hard to track resources by context and free them
+on dispose. It's not 100% clear that's the right thing to do always. For example
+since virtual-webgl lets you share resources across contexts it would be a
+perfectly valid use-case to create a temporary context just to create some
 resources and the dispose of that context but keep the created resources around.
 
-It's perfectly reasonable to do this yourself 100% outside virtual-webgl. You just *either* augment the context.
+It's perfectly reasonable to do this yourself 100% outside virtual-webgl. You
+just *either* augment the context.
 
 Example
 
