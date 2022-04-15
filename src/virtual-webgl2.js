@@ -925,7 +925,7 @@
           isVertexArrayOES(va) {
             return sharedWebGLContext.isVertexArray(va);
           },
-        }
+        };
       },
     },
     ANGLE_instanced_arrays: {
@@ -1014,7 +1014,7 @@
     },
     */
   };
-  
+
   const texImage2DArgParersMap = new Map([
     [9, function([target, level, internalFormat, width, height, , format, type]) {
       return {target, level, internalFormat, width, height, format, type};
@@ -1033,7 +1033,7 @@
       if (existingExt) {
         return existingExt;
       }
-      
+
       const info = webgl1Extensions[name];
       if (!info) {
         return virtualFns.getExtension.call(this, name);
@@ -1058,9 +1058,9 @@
     getSupportedExtensions: function() {
       return [
         ...sharedWebGLContext.getSupportedExtensions(),
-        "OES_texture_float",
-        "WEBGL_depth_texture",
-        "OES_vertex_array_object",
+        'OES_texture_float',
+        'WEBGL_depth_texture',
+        'OES_vertex_array_object',
         // "WEBGL_draw_buffers",  // See other comment
       ];
     },
@@ -1068,7 +1068,7 @@
 
   // copy all WebGL constants and functions to the prototype of
   // VirtualWebGLContext
-  function copyProperties(keys, VirtualClass, overrideFns) { 
+  function copyProperties(keys, VirtualClass, overrideFns) {
     for (const key of keys) {
       switch (key) {
         case 'canvas':
@@ -1153,7 +1153,7 @@
         : new VirtualWebGLContext(canvas, contextAttributes, compositor, () => {
             canvasToVirtualContextMap.delete(canvas);
           });
-        
+
     canvasToVirtualContextMap.set(canvas, newVirtualCtx);
 
     return newVirtualCtx;
