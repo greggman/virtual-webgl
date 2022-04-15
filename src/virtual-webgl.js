@@ -338,7 +338,7 @@
       stencilFail: gl.KEEP,
       stencilFunc: gl.ALWAYS,
       stencilPassDepthFail: gl.KEEP,
-      stencilPassDpethPass: gl.KEEP,
+      stencilPassDepthPass: gl.KEEP,
       stencilRef: 0,
       stencilValueMask: 0xFFFFFFFF,
       stencilWriteMask: 0xFFFFFFFF,
@@ -843,7 +843,7 @@
     state.stencilFail = gl.getParameter(gl.STENCIL_FAIL);
     state.stencilFunc = gl.getParameter(gl.STENCIL_FUNC);
     state.stencilPassDepthFail = gl.getParameter(gl.STENCIL_PASS_DEPTH_FAIL);
-    state.stencilPassDpethPass = gl.getParameter(gl.STENCIL_PASS_DEPTH_PASS);
+    state.stencilPassDepthPass = gl.getParameter(gl.STENCIL_PASS_DEPTH_PASS);
     state.stencilRef = gl.getParameter(gl.STENCIL_REF);
     state.stencilValueMask = gl.getParameter(gl.STENCIL_VALUE_MASK);
     state.stencilWriteMask = gl.getParameter(gl.STENCIL_WRITEMASK);
