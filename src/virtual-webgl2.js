@@ -399,9 +399,9 @@
           textureCubemap: null,
           texture2DArray: null,
           texture3D: null,
+          sampler: null,
         };
       }),
-      samplerUnits: new Array(numTextureUnits).fill(null),
       uniformBufferBindings: new Array(numUniformBufferBindings).fill(0).map(() => {
         return {
           buffer: null,
@@ -696,7 +696,7 @@
       resizeCanvasIfChanged(this);
       const gl = sharedWebGLContext;
       gl.bindSampler(unit, sampler);
-      this._state.samplerUnits[unit] = sampler;
+      this._state.textureUnits[unit].sampler = sampler;
     },
     bindVertexArray(va) {
       makeCurrentContext(this);
@@ -1219,6 +1219,7 @@
       gl.bindTexture(gl.TEXTURE_CUBE_MAP, unit.textureCubemap);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, unit.texture2DArray);
       gl.bindTexture(gl.TEXTURE_3D, unit.texture3D);
+      gl.bindSampler(i, unit.sampler);
     }
     gl.activeTexture(state.activeTexture);
 
