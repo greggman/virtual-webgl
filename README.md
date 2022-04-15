@@ -31,7 +31,7 @@ I mostly wrote this for a fun short technical challenge. I have no plans to actu
 or maintain it. If you find a problem feel free to file an issue but I can't promise I
 can spend anytime addressing it. Pull requests are more welcome or just fork it.
 
-## Some things you could do with this other can just get more contexts:
+## Some things you could do with this other than just get more contexts:
 
 ### Share resources across contexts.
 
