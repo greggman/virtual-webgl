@@ -1,5 +1,9 @@
 import * as twgl from '../js/twgl-full.module.js';
-import {assertNoGLError, assertRectIsColor} from '../assert.js';
+import {
+  assertArrayEqual,
+  assertNoGLError,
+  assertRectIsColor,
+} from '../assert.js';
 import {describe, it} from '../mocha-support.js';
 import {
   createContext,
@@ -53,6 +57,19 @@ describe('basic tests', () => {
     const {gl: gl1} = createContext2();
     const {gl: gl2} = createContext();
     testSharingTexture(gl1, gl2)
+  });
+
+  it('restores attribute values', () => {
+    const {gl: gl1} = createContext2();
+    const {gl: gl2} = createContext2();
+
+    const v1 = [11, 12, 13, 14];
+    const v2 = [21, 22, 23, 24];
+    gl1.vertexAttrib4fv(5, v1);
+    gl2.vertexAttrib4f(5, ...v2);
+
+    assertArrayEqual(gl1.getVertexAttrib(5, gl1.CURRENT_VERTEX_ATTRIB), v1);
+    assertArrayEqual(gl2.getVertexAttrib(5, gl2.CURRENT_VERTEX_ATTRIB), v2);
   });
 
 });

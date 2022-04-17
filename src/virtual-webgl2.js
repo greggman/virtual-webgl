@@ -47,9 +47,14 @@
   let someContextsNeedRendering;
 
   const sharedWebGLContext = document.createElement('canvas').getContext('webgl2');
+  const numAttribs = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_VERTEX_ATTRIBS);
   const numTextureUnits = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
   const numUniformBufferBindings = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_UNIFORM_BUFFER_BINDINGS);
   const baseState = makeDefaultState(sharedWebGLContext, 300, 150);
+
+  const INT = 0x1404
+  const UNSIGNED_INT = 0x1405; 
+  const FLOAT = 0x1406;
 
   const vs = `
   attribute vec4 position;
@@ -328,6 +333,13 @@
         [ gl.STENCIL_TEST, false ],
       ]),
 
+      // This is a place the spec gets wrong! This data should have been part of a VertexArray
+      attribValues: new Array(numAttribs).fill(0).map(() => {
+        return {
+          type: gl.FLOAT,
+          value: [0, 0, 0, 1],
+        };
+      }),
 
       vertexArray: vao,
       activeTexture: gl.TEXTURE0,
@@ -488,6 +500,17 @@
       for (let i = 0; i < argsToStateProps.length; ++i) {
         this._state[argsToStateProps[i]] = args[i];
       }
+    };
+  }
+
+  function createVertexAttribWrapper(origFn, fn) {
+    return function(loc, ...args) {
+      makeCurrentContext(this);
+      resizeCanvasIfChanged(this);
+      const gl = sharedWebGLContext;
+      origFn.call(gl, loc, ...args);
+      const [type, value] = fn(args);
+      this._state.attribValues[loc] = {type, value};
     };
   }
 
@@ -901,6 +924,30 @@
       gl.stencilOpSeparate(face, fail, zfail, zpass);
       saveStencilOp(this._state, face, fail, zfail, zpass);
     },
+    vertexAttrib1f:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1f,   ([x])            => [FLOAT, [x, 0, 0, 1]]),
+    vertexAttrib2f:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1f,   ([x, y])         => [FLOAT, [x, y, 0, 1]]),
+    vertexAttrib3f:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1f,   ([x, y, z])      => [FLOAT, [x, y, z, 1]]),
+    vertexAttrib4f:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1f,   ([x, y, z, w])   => [FLOAT, [x, y, z, w]]),
+    vertexAttrib1fv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1fv,  ([[x]])          => [FLOAT, [x, 0, 0, 1]]),
+    vertexAttrib2fv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1fv,  ([[x, y]])       => [FLOAT, [x, y, 0, 1]]),
+    vertexAttrib3fv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1fv,  ([[x, y, z]])    => [FLOAT, [x, y, z, 1]]),
+    vertexAttrib4fv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1fv,  ([[x, y, z, w]]) => [FLOAT, [x, y, z, w]]),
+    vertexAttrib1i:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1i,   ([x])            => [FLOAT, [x, 0, 0, 1]]),
+    vertexAttrib2i:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1i,   ([x, y])         => [FLOAT, [x, y, 0, 1]]),
+    vertexAttrib3i:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1i,   ([x, y, z])      => [FLOAT, [x, y, z, 1]]),
+    vertexAttrib4i:   createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1i,   ([x, y, z, w])   => [FLOAT, [x, y, z, w]]),
+    vertexAttrib1iv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1iv,  ([[x]])          => [FLOAT, [x, 0, 0, 1]]),
+    vertexAttrib2iv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1iv,  ([[x, y]])       => [FLOAT, [x, y, 0, 1]]),
+    vertexAttrib3iv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1iv,  ([[x, y, z]])    => [FLOAT, [x, y, z, 1]]),
+    vertexAttrib4iv:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1iv,  ([[x, y, z, w]]) => [FLOAT, [x, y, z, w]]),
+    vertexAttrib1ui:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1ui,  ([x])            => [FLOAT, [x, 0, 0, 1]]),
+    vertexAttrib2ui:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1ui,  ([x, y])         => [FLOAT, [x, y, 0, 1]]),
+    vertexAttrib3ui:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1ui,  ([x, y, z])      => [FLOAT, [x, y, z, 1]]),
+    vertexAttrib4ui:  createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1ui,  ([x, y, z, w])   => [FLOAT, [x, y, z, w]]),
+    vertexAttrib1uiv: createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1uiv, ([[x]])          => [FLOAT, [x, 0, 0, 1]]),
+    vertexAttrib2uiv: createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1uiv, ([[x, y]])       => [FLOAT, [x, y, 0, 1]]),
+    vertexAttrib3uiv: createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1uiv, ([[x, y, z]])    => [FLOAT, [x, y, z, 1]]),
+    vertexAttrib4uiv: createVertexAttribWrapper(WebGL2RenderingContext.prototype.vertexAttrib1uiv, ([[x, y, z, w]]) => [FLOAT, [x, y, z, w]]),
   };
 
   const webgl1Extensions = {
@@ -1209,6 +1256,21 @@
 
     // restore attributes
     gl.bindVertexArray(state.vertexArray);
+    for (let i = 0; i < numAttribs; ++i) {
+      const attr = state.attribValues[i];
+      switch (attr.type) {
+        case gl.FLOAT:
+          gl.vertexAttrib4fv(i, attr.value);
+          break;
+        case gl.INT:
+          gl.vertexAttribI4iv(i, attr.value);
+          break;
+        case gl.UNSIGNED_INT:
+          gl.vertexAttribI4uiv(i, attr.value);
+          break;
+      }
+    }
+
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, state.transformFeedback);
 
     // restore texture units
