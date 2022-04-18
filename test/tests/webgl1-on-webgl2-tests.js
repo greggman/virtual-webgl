@@ -3,7 +3,7 @@ import {assertFalsy, assertNoGLError, assertRectIsColor, assertTruthy} from '../
 import {describe, it} from '../mocha-support.js';
 import {createContext, setupTexturedPointProgram} from '../webgl.js';
 
-describe('WebGL1 tests', () => {
+describe('WebGL1 on WebGL2 tests', () => {
 
   it('test is not WebGL2', () => {
     const {gl} = createContext();
