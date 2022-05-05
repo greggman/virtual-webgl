@@ -175,6 +175,12 @@ to give your custom compositor a chance to clean up.
 The WebGL2 wrapper (virtual-webgl2.js) is newer and saves state so it's pretty fast. 
 The WebGL1 wrapper (virtual-webgl.js) is older and queries state so it's pretty slow.
 
+You could probably get even more perf by changing all the functions that set GL state
+to just save the state but not actually set it and then just set the dirty state
+at draw time. And further, for all the functions that query state just return the
+saved state instead of asking WebGL. That would actually probably a speedup for
+many poorly written apps that query things they shouldn't.
+
 Another perf issue is you can't render directly to different canvases so I have
 to make each of the canvases use a `Canvas2DRenderingContext` and call
 `drawImage`. That could be solved maybe with `OffscreenCanvas` and
