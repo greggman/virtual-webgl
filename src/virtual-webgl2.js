@@ -1117,11 +1117,16 @@
   // VirtualWebGLContext
   function copyProperties(keys, VirtualClass, overrideFns) {
     for (const key of keys) {
+      const propDesc = Object.getOwnPropertyDescriptor(WebGL2RenderingContext.prototype, key);
+      if (propDesc.get) {
+        // it's a getter/setter ?
+        const virtualPropDesc = Object.getOwnPropertyDescriptor(VirtualClass.prototype, key);
+        if (!virtualPropDesc) {
+          console.warn(`WebGL2RenderingContext.${key} is not supported`);
+        }
+        continue;
+      }
       switch (key) {
-        case 'canvas':
-        case 'drawingBufferWidth':
-        case 'drawingBufferHeight':
-          break;
         default: {
           const value = WebGL2RenderingContext.prototype[key];
           let newValue = value;

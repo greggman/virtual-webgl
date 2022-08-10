@@ -381,11 +381,16 @@
   // copy all WebGL constants and functions to the prototype of
   // VirtualWebGLContext
   for (let key in WebGLRenderingContext.prototype) {
+    const propDesc = Object.getOwnPropertyDescriptor(WebGLRenderingContext.prototype, key);
+    if (propDesc.get) {
+      // it's a getter/setter ?
+      const virtualPropDesc = Object.getOwnPropertyDescriptor(VirtualWebGLContext.prototype, key);
+      if (!virtualPropDesc) {
+        console.warn(`WebGLRenderingContext.${key} is not supported`);
+      }
+      continue;
+    }
     switch (key) {
-      case 'canvas':
-      case 'drawingBufferWidth':
-      case 'drawingBufferHeight':
-        break;
       default: {
         const value = WebGLRenderingContext.prototype[key];
         let newValue = value;
