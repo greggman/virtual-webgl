@@ -1,11 +1,24 @@
 {
   "name": "virtual-webgl",
-  "version": "1.0.2",
-  "description": "",
+  "version": "1.0.3",
+  "description": "Virtualize WebGL",
+  "main": "src/virtual-webgl2.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/greggman/virtual-webgl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/greggman/virtual-webgl/issues"
+  },
+  "homepage": "https://github.com/greggman/virtual-webgl",
+  "files": [
+    "src/**/*.js"
+  ],  
+  "keywords": ["webgl", "webgl2"],
   "author": "Gregg Tavares",
   "devDependencies": {
     "eslint": "^8.11.0",
