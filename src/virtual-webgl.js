@@ -60,7 +60,6 @@
   const sharedInstanceExtension = sharedWebGLContext.getExtension("ANGLE_instanced_arrays");
   const numAttributes = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_VERTEX_ATTRIBS);
   const numTextureUnits = sharedWebGLContext.getParameter(sharedWebGLContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
-  let numDrawBuffers;
   const baseState = makeDefaultState(300, 150);
 
   const vs = `
