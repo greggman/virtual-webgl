@@ -49,6 +49,12 @@
       wrapperFnMakerFn: makeANGLE_instanced_arraysWrapper,
     },
   };
+
+  // provide lower case methods as well
+  extensionInfo.webgl_draw_buffers = extensionInfo.WEBGL_draw_buffers;
+  extensionInfo.oes_vertex_array_object = extensionInfo.OES_vertex_array_object;
+  extensionInfo.angle_instanced_arrays = extensionInfo.ANGLE_instanced_arrays;
+
   const extensionSaveRestoreHelpersArray = [];
   const extensionSaveRestoreHelpers = {};
 
