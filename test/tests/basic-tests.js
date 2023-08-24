@@ -3,6 +3,7 @@ import {
   assertArrayEqual,
   assertNoGLError,
   assertRectIsColor,
+  assertTruthy,
 } from '../assert.js';
 import {describe, it} from '../mocha-support.js';
 import {
@@ -57,6 +58,15 @@ describe('basic tests', () => {
     const {gl: gl1} = createContext2();
     const {gl: gl2} = createContext();
     testSharingTexture(gl1, gl2)
+  });
+
+  it('test get extension lower-case', () => {
+    const {gl: gl1} = createContext2();
+    const {gl: gl2} = createContext();
+    assertTruthy(gl1.getExtension('WEBGL_lose_context'));
+    assertTruthy(gl2.getExtension('WEBGL_lose_context'));
+    assertTruthy(gl1.getExtension('webgl_lose_context'));
+    assertTruthy(gl2.getExtension('webgl_lose_context'));
   });
 
   it('restores attribute values', () => {

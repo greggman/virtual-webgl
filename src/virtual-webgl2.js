@@ -559,6 +559,7 @@
 
   const virtualFns = {
     getExtension(name) {
+      name = name.toLowerCase();
       // just like the real context each extension needs a virtual class because each use
       // of the extension might be modified (as in people adding properties to it)
       const existingExt = this._extensions[name];
@@ -951,12 +952,12 @@
   };
 
   const webgl1Extensions = {
-    OES_texture_float: {
+    oes_texture_float: {
       fn() {
         return {};
       },
     },
-    OES_vertex_array_object: {
+    oes_vertex_array_object: {
       fn(vCtx) {
         return {
           VERTEX_ARRAY_BINDING_OES: sharedWebGLContext.VERTEX_ARRAY_BINDING,
@@ -975,7 +976,7 @@
         };
       },
     },
-    ANGLE_instanced_arrays: {
+    angle_instanced_arrays: {
       fn(vCtx) {
         return {
           VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE: 0x88FE,
@@ -1076,6 +1077,7 @@
 
   const webgl1Fns = {
     getExtension(name) {
+      name = name.toLowerCase();
       const existingExt = this._extensions[name];
       if (existingExt) {
         return existingExt;
