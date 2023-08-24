@@ -1,6 +1,6 @@
 {
   "name": "virtual-webgl",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Virtualize WebGL",
   "main": "src/virtual-webgl2.js",
   "scripts": {
@@ -17,8 +17,11 @@
   "homepage": "https://github.com/greggman/virtual-webgl",
   "files": [
     "src/**/*.js"
-  ],  
-  "keywords": ["webgl", "webgl2"],
+  ],
+  "keywords": [
+    "webgl",
+    "webgl2"
+  ],
   "author": "Gregg Tavares",
   "devDependencies": {
     "eslint": "^8.11.0",
