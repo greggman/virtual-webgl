@@ -38,14 +38,14 @@
   };
   const canvasToVirtualContextMap = new Map();
   const extensionInfo = {
-    WEBGL_draw_buffers: {
+    webgl_draw_buffers: {
       wrapperFnMakerFn: makeWEBGL_draw_buffersWrapper,
       saveRestoreMakerFn: makeWEBGL_drawBuffersSaveRestoreHelper,
     },
-    OES_vertex_array_object: {
+    oes_vertex_array_object: {
       wrapperFnMakerFn: makeOES_vertex_array_objectWrapper,
     },
-    ANGLE_instanced_arrays: {
+    angle_instanced_arrays: {
       wrapperFnMakerFn: makeANGLE_instanced_arraysWrapper,
     },
   };
