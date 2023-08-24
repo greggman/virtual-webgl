@@ -1,6 +1,6 @@
 {
   "name": "virtual-webgl",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Virtualize WebGL",
   "main": "src/virtual-webgl2.js",
   "scripts": {
