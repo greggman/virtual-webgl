@@ -596,6 +596,8 @@
         wrapper[key] = value;
       }
 
+      this._extensions[name] = wrapper;
+
       return wrapper;
     },
     activeTexture(unit) {

@@ -429,6 +429,7 @@
 
   function createGetExtensionWrapper(origFn) {
     return function(name) {
+      name = name.toLowerCase();
       // just like the real context each extension needs a virtual class because each use
       // of the extension might be modified (as in people adding properties to it)
       const existingExt = this._extensions[name];
@@ -459,6 +460,8 @@
         }
         wrapper[key] = value;
       }
+
+      this._extensions[name] = wrapper;
 
       return wrapper;
     };
