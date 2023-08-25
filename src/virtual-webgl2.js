@@ -558,29 +558,29 @@
   }
 
   const virtualFns = {
-    getExtension(name) {
-      name = name.toLowerCase();
+    getExtension(extensionName) {
+      extensionName = extensionName.toLowerCase();
       // just like the real context each extension needs a virtual class because each use
       // of the extension might be modified (as in people adding properties to it)
-      const existingExt = this._extensions[name];
+      const existingExt = this._extensions[extensionName];
       if (existingExt) {
         return existingExt;
       }
 
-      const ext = sharedWebGLContext.getExtension(name);
+      const ext = sharedWebGLContext.getExtension(extensionName);
       if (!ext) {
         return null;
       }
-      const wrapperInfo = extensionInfo[name] || {};
+      const wrapperInfo = extensionInfo[extensionName] || {};
       const wrapperFnMakerFn = wrapperInfo.wrapperFnMakerFn || (() => {
-        console.log('trying to get extension:', name);
+        console.log('trying to get extension:', extensionName);
       });
-      const saveRestoreHelper = extensionSaveRestoreHelpers[name];
+      const saveRestoreHelper = extensionSaveRestoreHelpers[extensionName];
       if (!saveRestoreHelper) {
         const saveRestoreMakerFn = wrapperInfo.saveRestoreMakerFn;
         if (saveRestoreMakerFn) {
           const saveRestore = saveRestoreMakerFn(ext);
-          extensionSaveRestoreHelpers[name] = saveRestore;
+          extensionSaveRestoreHelpers[extensionName] = saveRestore;
           extensionSaveRestoreHelpersArray.push(saveRestore);
         }
       }
@@ -591,12 +591,12 @@
       for (const key in ext) {
         let value = ext[key];
         if (typeof value === 'function') {
-          value = wrapperFnMakerFn(ext, value, name);
+          value = wrapperFnMakerFn(ext, value, extensionName);
         }
         wrapper[key] = value;
       }
 
-      this._extensions[name] = wrapper;
+      this._extensions[extensionName] = wrapper;
 
       return wrapper;
     },
