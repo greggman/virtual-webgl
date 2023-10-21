@@ -79,6 +79,17 @@ or for WebGL2 use
 <script src="virtual-webgl2.js"></script>
 ```
 
+### Using CDN
+
+WebGL2 is also hosted on a CDN:
+
+```
+<script src="https://cdn.jsdelivr.net/npm/virtual-webgl"></script>
+```
+
+To use a specific version, add `@1.0.6` to the URL.
+
+
 ## Writing your own compositor
 
 The compositor is the part of virtual-webgl that's responsible for updating the
