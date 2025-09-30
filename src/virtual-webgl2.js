@@ -1127,6 +1127,15 @@
         const virtualPropDesc = Object.getOwnPropertyDescriptor(VirtualClass.prototype, key);
         if (!virtualPropDesc) {
           console.warn(`WebGL2RenderingContext.${key} is not supported`);
+          Object.defineProperty(VirtualClass.prototype, key, {
+            get() {
+              return propDesc.get.call(sharedWebGLContext);
+            },
+            set(v) {
+              console.log(`setting WebGL2RenderingContext.${key} is not supported`);
+              //propDesc.set.call(sharedWebGLContext, v);
+            }
+          });
         }
         continue;
       }

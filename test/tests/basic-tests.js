@@ -82,4 +82,9 @@ describe('basic tests', () => {
     assertArrayEqual(gl2.getVertexAttrib(5, gl2.CURRENT_VERTEX_ATTRIB), v2);
   });
 
+  it('test addExtensionToContext', () => {
+    const {gl: gl1} = createContext2();
+    twgl.addExtensionsToContext(gl1);
+  });
+
 });
